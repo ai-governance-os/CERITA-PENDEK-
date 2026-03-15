@@ -312,38 +312,7 @@ body {
 /* ── WORD SPANS ── */
 .story-text .word {
   display: inline;
-  border-radius: 5px;
-  padding: 1px 2px;
-  transition: background 0.12s;
   cursor: default;
-}
-
-/* Currently spoken word — yellow highlight, keep suku kata colours */
-.story-text .word.active {
-  background: #FFD23F;
-  border-radius: 6px;
-  box-shadow: 0 2px 10px rgba(255, 210, 63, 0.55);
-  padding: 1px 4px;
-}
-.story-text .word.active .suku-a { color: #922B21; }   /* slightly darker red on yellow */
-.story-text .word.active .suku-b { color: #154360; }   /* slightly darker blue on yellow */
-
-/* Single-syllable word active state */
-.story-text .word.active:not(:has(.suku)) {
-  color: #333;
-  font-weight: 700;
-}
-
-/* Already spoken — dim the suku kata colours */
-.story-text .word.done .suku-a,
-.story-text .word.done .suku-b {
-  color: #C8C8C8;
-  font-weight: 400;
-}
-
-/* Single-syllable done state */
-.story-text .word.done:not(:has(.suku)) {
-  color: var(--text-done);
 }
 
 /* Paragraph spacing */

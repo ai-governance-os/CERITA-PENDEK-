@@ -1,22 +1,16 @@
 /* ════════════════════════════════════════════════
-   speech.js — Web Speech API + Karaoke Highlight
-
-   双轨高亮策略:
-   TRACK A — 按字符位置比例预排 setTimeout (立即启动，确保一定highlight)
-   TRACK B — onboundary 事件实时修正对齐 (有就用，没有就靠A)
-   两者同时运行，wordIndex 只能前进不能后退，谁快谁主导。
+   speech.js — Web Speech API
+   Handles voice loading, TTS playback, and
+   suku kata word span building.
+   No karaoke highlight — suku kata colours only.
    ════════════════════════════════════════════════ */
 
 const synth = window.speechSynthesis;
 
-/* ── state ── */
-let voices    = [];
-let wordSpans = [];      // DOM span 列表
-let spanMap   = [];      // [{start, end, idx}] 字符位置映射
-let totalWords  = 0;
-let wordIndex   = 0;     // 当前进度（只增不减）
-let isPaused    = false;
-let highlightTimers = [];
+let voices   = [];
+let wordSpans = [];
+let isPaused  = false;
+let progressTimer = null;
 
 
 /* ════════════════════════════════════════════════
@@ -48,27 +42,25 @@ function getSelectedVoice() {
 
 
 /* ════════════════════════════════════════════════
-   BUILD WORD SPANS
+   BUILD WORD SPANS  (suku kata colour coding)
    ════════════════════════════════════════════════ */
 function buildWordSpans(story) {
   const container = document.getElementById('story-text');
   container.innerHTML = '';
   wordSpans = [];
-  spanMap   = [];
 
   story.paragraphs.forEach((para, pi) => {
     para.split(/(\s+)/).forEach(token => {
       if (token.trim() === '') {
         container.appendChild(document.createTextNode(' '));
       } else {
-        const word     = token.trim();
-        const span     = document.createElement('span');
+        const word = token.trim();
+        const span = document.createElement('span');
         span.className = 'word';
 
-        // Split into suku kata and wrap each in a coloured inner span
+        // Colour each syllable alternately red / blue
         const syllables = splitSukuKata(word);
         if (syllables.length <= 1) {
-          // single-syllable or no-vowel token — just text
           span.textContent = word;
         } else {
           syllables.forEach((suku, si) => {
@@ -84,125 +76,43 @@ function buildWordSpans(story) {
         container.appendChild(document.createTextNode(' '));
       }
     });
+
     if (pi < story.paragraphs.length - 1) {
       const gap     = document.createElement('span');
       gap.className = 'para-break';
       container.appendChild(gap);
     }
   });
-
-  totalWords = wordSpans.length;
 }
 
 
 /* ════════════════════════════════════════════════
-   BUILD CHAR MAP  (用正则解析，更可靠)
-   spanMap[i] = { start, end, idx }
+   PROGRESS BAR  (time-based estimate)
    ════════════════════════════════════════════════ */
-function buildCharMap(fullText) {
-  spanMap = [];
-  const regex = /\S+/g;
-  let match;
-  let spanIdx = 0;
+function startProgress(estimatedMs) {
+  clearProgress();
+  const fill  = document.getElementById('progress-fill');
+  const start = Date.now();
 
-  while ((match = regex.exec(fullText)) !== null && spanIdx < wordSpans.length) {
-    spanMap.push({
-      start : match.index,
-      end   : match.index + match[0].length,
-      idx   : spanIdx
-    });
-    spanIdx++;
-  }
+  progressTimer = setInterval(() => {
+    const pct = Math.min(100, ((Date.now() - start) / estimatedMs) * 100);
+    fill.style.width = pct + '%';
+    if (pct >= 100) clearProgress();
+  }, 200);
 }
 
-
-/* ════════════════════════════════════════════════
-   HIGHLIGHT CORE
-   ════════════════════════════════════════════════ */
-function highlightWord(idx) {
-  if (idx < 0 || idx >= wordSpans.length) return;
-
-  wordSpans.forEach((s, i) => {
-    if (i < idx)      { s.classList.remove('active'); s.classList.add('done'); }
-    else if (i === idx){ s.classList.add('active');   s.classList.remove('done'); }
-    // words after idx: leave as-is (未读)
-  });
-
-  wordSpans[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
-  updateProgress(Math.round(((idx + 1) / totalWords) * 100));
+function clearProgress() {
+  if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
 }
 
-/** 只有在新位置 >= 当前位置时才高亮（防止倒退） */
-function advanceTo(idx) {
-  if (idx > wordIndex || (idx === 0 && wordIndex === 0)) {
-    wordIndex = idx;
-    highlightWord(idx);
-  }
+function resetProgress() {
+  clearProgress();
+  document.getElementById('progress-fill').style.width = '0%';
 }
 
-function clearAllHighlights() {
-  wordSpans.forEach(s => s.classList.remove('active', 'done'));
-  updateProgress(0);
-}
-
-function markAllDone() {
-  wordSpans.forEach(s => { s.classList.remove('active'); s.classList.add('done'); });
-}
-
-function updateProgress(pct) {
-  document.getElementById('progress-fill').style.width = pct + '%';
-}
-
-
-/* ════════════════════════════════════════════════
-   FIND NEAREST SPAN  (for onboundary charIndex)
-   ════════════════════════════════════════════════ */
-function findSpanByChar(charIndex) {
-  // 精确匹配
-  for (const e of spanMap) {
-    if (charIndex >= e.start && charIndex < e.end) return e.idx;
-  }
-  // 找最近
-  let best = 0, bestDist = Infinity;
-  spanMap.forEach((e, i) => {
-    const d = Math.abs(e.start - charIndex);
-    if (d < bestDist) { bestDist = d; best = i; }
-  });
-  return best;
-}
-
-
-/* ════════════════════════════════════════════════
-   TRACK A — 预排计时器 (立即启动)
-   按每个词的字符位置在全文中的比例来估算时间点
-   ════════════════════════════════════════════════ */
-function scheduleWordTimers(fullText, rate) {
-  clearTimers();
-  if (!spanMap.length) return;
-
-  const totalChars  = fullText.length;
-  // 马来语TTS: rate=1.0 约13字符/秒，加上句尾停顿略慢一点
-  const charsPerSec = 12 * rate;
-  const totalMs     = (totalChars / charsPerSec) * 1000;
-
-  // TTS启动延迟约200ms
-  const startDelay = 200;
-
-  spanMap.forEach(entry => {
-    const delay = startDelay + (entry.start / totalChars) * totalMs;
-    const t = setTimeout(() => {
-      // 只有在onboundary没跑到这里时才执行
-      if (entry.idx >= wordIndex) {
-        advanceTo(entry.idx);
-      }
-    }, delay);
-    highlightTimers.push(t);
-  });
-}
-
-function clearTimers() {
-  highlightTimers.forEach(t => clearTimeout(t));
-  highlightTimers = [];
+function completeProgress() {
+  clearProgress();
+  document.getElementById('progress-fill').style.width = '100%';
 }
 
 
@@ -210,7 +120,7 @@ function clearTimers() {
    PLAYBACK
    ════════════════════════════════════════════════ */
 function playStory(story, musicEnabled) {
-  // 续播
+  // Resume from pause
   if (isPaused && synth.paused) {
     synth.resume();
     isPaused = false;
@@ -219,17 +129,12 @@ function playStory(story, musicEnabled) {
     return;
   }
 
-  // 全新开始
   synth.cancel();
-  clearTimers();
-  clearAllHighlights();
-  wordIndex = 0;
+  resetProgress();
 
   const fullText = story.paragraphs.join(' ');
-  buildCharMap(fullText);
-
-  const utter = new SpeechSynthesisUtterance(fullText);
-  const rate  = parseFloat(document.getElementById('speed-range').value);
+  const utter    = new SpeechSynthesisUtterance(fullText);
+  const rate     = parseFloat(document.getElementById('speed-range').value);
 
   utter.rate   = rate;
   utter.pitch  = 1.15;
@@ -239,27 +144,19 @@ function playStory(story, musicEnabled) {
   const voice = getSelectedVoice();
   if (voice) utter.voice = voice;
 
-  /* TRACK A — 预排计时器，立即开始 */
-  scheduleWordTimers(fullText, rate);
+  // Estimate total duration for progress bar (~13 chars/sec at rate 1.0)
+  const estimatedMs = (fullText.length / (13 * rate)) * 1000;
 
-  /* TRACK B — onboundary 实时修正 */
-  utter.onboundary = (e) => {
-    if (e.name !== 'word') return;
-    const idx = findSpanByChar(e.charIndex);
-    // onboundary 跑得准，直接跳到正确位置（即使超过计时器）
-    if (idx >= wordIndex) {
-      wordIndex = idx;
-      highlightWord(idx);
-    }
+  utter.onstart = () => {
+    startProgress(estimatedMs);
   };
 
   utter.onend = () => {
-    clearTimers();
+    clearProgress();
+    completeProgress();
     setPlayingState(false);
-    markAllDone();
-    updateProgress(100);
-    showStarBurst();
     document.getElementById('char-stage').classList.remove('playing');
+    showStarBurst();
     if (musicEnabled) setTimeout(stopMusic, 3000);
   };
 
@@ -280,7 +177,7 @@ function pauseStory(musicEnabled) {
   if (synth.speaking && !synth.paused) {
     synth.pause();
     isPaused = true;
-    clearTimers();
+    clearProgress();
     setPlayingState(false);
     document.getElementById('char-stage').classList.remove('playing');
     if (musicEnabled) stopMusic();
@@ -289,10 +186,8 @@ function pauseStory(musicEnabled) {
 
 function stopStory(musicEnabled) {
   synth.cancel();
-  clearTimers();
-  isPaused  = false;
-  wordIndex = 0;
-  clearAllHighlights();
+  isPaused = false;
+  resetProgress();
   setPlayingState(false);
   document.getElementById('char-secondary').classList.remove('visible');
   document.getElementById('char-stage').classList.remove('playing');
@@ -307,12 +202,15 @@ function setPlayingState(playing) {
   document.getElementById('char-stage').classList.toggle('playing', playing);
 }
 
-/* 页面隐藏时自动暂停 */
+
+/* ════════════════════════════════════════════════
+   AUTO-PAUSE when tab is hidden
+   ════════════════════════════════════════════════ */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && synth.speaking && !synth.paused) {
     synth.pause();
     isPaused = true;
-    clearTimers();
+    clearProgress();
     setPlayingState(false);
   }
 });
