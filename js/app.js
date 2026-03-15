@@ -108,10 +108,10 @@ function openStory(story) {
   stopMusic();
 
   // Reset speech state
-  synth.cancel();
+  if (synth) synth.cancel();
   isPaused = false;
   setPlayingState(false);
-  updateProgress(0);
+  resetProgress();
 
   // Switch screens
   document.getElementById('screen-menu').style.display  = 'none';
