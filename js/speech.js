@@ -61,9 +61,24 @@ function buildWordSpans(story) {
       if (token.trim() === '') {
         container.appendChild(document.createTextNode(' '));
       } else {
-        const span       = document.createElement('span');
-        span.className   = 'word';
-        span.textContent = token.trim();
+        const word     = token.trim();
+        const span     = document.createElement('span');
+        span.className = 'word';
+
+        // Split into suku kata and wrap each in a coloured inner span
+        const syllables = splitSukuKata(word);
+        if (syllables.length <= 1) {
+          // single-syllable or no-vowel token — just text
+          span.textContent = word;
+        } else {
+          syllables.forEach((suku, si) => {
+            const sk       = document.createElement('span');
+            sk.className   = `suku suku-${si % 2 === 0 ? 'a' : 'b'}`;
+            sk.textContent = suku;
+            span.appendChild(sk);
+          });
+        }
+
         container.appendChild(span);
         wordSpans.push(span);
         container.appendChild(document.createTextNode(' '));
