@@ -114,7 +114,7 @@ const STORIES = [
     preview: "Cerita tentang kawan baik bernama Lau Yan Tong...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kawan Saya.",
-      "Kawan saya bernama Lau Yan Tong. Dia kawan baik saya. Kami belajar di kelas yang sama. Kami selalu bermain bersama di sekolah. Tan Jing Xian seorang yang baik dan rajin. Saya sangat gembira mempunyai kawan seperti dia.",
+      "Kawan saya bernama Lau Yan Tong. Dia kawan baik saya. Kami belajar di kelas yang sama. Kami selalu bermain bersama di sekolah. Lau Yan Tong seorang yang baik dan rajin. Saya sangat gembira mempunyai kawan seperti dia.",
       "Sekian, terima kasih."
     ]
   }
