@@ -13,6 +13,8 @@ const STORIES = [
     color1: "#FF6B6B",
     color2: "#FFA07A",
     textColor: "#FFFFFF",
+    sceneBg: "linear-gradient(175deg,#87CEEB 0%,#b2dfdb 50%,#4CAF50 78%,#2E7D32 100%)",
+    decos: ["☁️","☁️","🌳","🌊"],
     preview: "Kisah anjing tamak yang kehilangan tulangnya di sungai...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah anjing dan bayangnya.",
@@ -33,6 +35,8 @@ const STORIES = [
     color1: "#27AE60",
     color2: "#2ECC71",
     textColor: "#FFFFFF",
+    sceneBg: "linear-gradient(175deg,#64B5F6 0%,#90CAF9 45%,#E1F5FE 100%)",
+    decos: ["☁️","⛅","☁️","🌤️"],
     preview: "Kura-kura yang ingin terbang seperti helang...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kura-Kura Ingin Terbang.",
@@ -54,6 +58,8 @@ const STORIES = [
     color1: "#2980B9",
     color2: "#3498DB",
     textColor: "#FFFFFF",
+    sceneBg: "linear-gradient(175deg,#AED581 0%,#66BB6A 50%,#2E7D32 100%)",
+    decos: ["🌿","💧","🌳","🌿"],
     preview: "Kisah merpati dan semut yang saling tolong-menolong...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Burung Merpati Dan Semut.",
@@ -73,6 +79,8 @@ const STORIES = [
     color1: "#8E44AD",
     color2: "#9B59B6",
     textColor: "#FFFFFF",
+    sceneBg: "linear-gradient(175deg,#C5E1A5 0%,#8BC34A 50%,#33691E 100%)",
+    decos: ["🌿","🌿","💦","🌿"],
     preview: "Bapa katak yang sombong mencuba mengembungkan perutnya...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Bapa Katak yang bongkak.",
@@ -95,6 +103,8 @@ const STORIES = [
     color1: "#E67E22",
     color2: "#F39C12",
     textColor: "#FFFFFF",
+    sceneBg: "linear-gradient(175deg,#FFE082 0%,#FFB300 55%,#E65100 100%)",
+    decos: ["🏫","✏️","📚","🌸"],
     preview: "Cerita tentang kawan baik bernama Tan Jing Xian...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kawan Saya.",
@@ -111,6 +121,8 @@ const STORIES = [
     color1: "#16A085",
     color2: "#1ABC9C",
     textColor: "#FFFFFF",
+    sceneBg: "linear-gradient(175deg,#80CBC4 0%,#26A69A 55%,#00695C 100%)",
+    decos: ["🏫","✏️","📚","🌺"],
     preview: "Cerita tentang kawan baik bernama Lau Yan Tong...",
     paragraphs: [
       "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kawan Saya.",

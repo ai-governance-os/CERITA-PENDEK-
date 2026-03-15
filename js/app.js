@@ -1,158 +1,203 @@
 /* ════════════════════════════════════════════════
    app.js — Main Application Logic
-   Wires together: UI, story grid, navigation,
-   music toggle, speed slider, and button events.
-   Depends on: data.js, music.js, speech.js
+   Depends on: data.js, syllable.js, music.js,
+               speech.js, effects.js, progress.js
    ════════════════════════════════════════════════ */
 
-/* ─────────────────────────────────────────
-   STATE
-───────────────────────────────────────── */
-let currentStory  = null;
-let musicEnabled  = false;
+let currentStory = null;
+let musicEnabled = false;
 
 const BUBBLE_COLORS = [
-  '#FF6B35', '#FFD23F', '#06D6A0', '#118AB2',
-  '#EF476F', '#A8DADC', '#9B5DE5'
+  '#FF6B35','#FFD23F','#06D6A0','#118AB2',
+  '#EF476F','#A8DADC','#9B5DE5'
+];
+
+/* Deco positions for scene emojis in char-stage */
+const DECO_SLOTS = [
+  { top:'8%',  left:'6%',   fontSize:'2rem',   animDelay:'0s'   },
+  { top:'8%',  right:'6%',  fontSize:'2.2rem', animDelay:'0.5s' },
+  { bottom:'6px', left:'12%', fontSize:'2.5rem', animDelay:'0.3s' },
+  { bottom:'6px', right:'12%',fontSize:'2rem',  animDelay:'0.8s' },
 ];
 
 
-/* ─────────────────────────────────────────
-   INIT — runs on page load
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   INIT
+   ════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
   makeBubbles();
   buildStoryGrid();
   initSpeedSlider();
   bindButtons();
+  showProgressBanner();
 });
 
 
-/* ─────────────────────────────────────────
-   FLOATING BUBBLES (background decoration)
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   FLOATING BUBBLES
+   ════════════════════════════════════════════════ */
 function makeBubbles() {
   const wrap = document.getElementById('bubbles');
   for (let i = 0; i < 18; i++) {
-    const b    = document.createElement('div');
+    const b = document.createElement('div');
     b.className = 'bubble';
-    const size  = 30 + Math.random() * 90;
-    const left  = Math.random() * 100;
-    const delay = Math.random() * 14;
-    const dur   = 12 + Math.random() * 16;
+    const size = 30 + Math.random() * 90;
     b.style.cssText = `
-      width:  ${size}px;
-      height: ${size}px;
-      left:   ${left}%;
-      background: ${BUBBLE_COLORS[i % BUBBLE_COLORS.length]};
-      animation-delay:    ${delay}s;
-      animation-duration: ${dur}s;
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      background:${BUBBLE_COLORS[i % BUBBLE_COLORS.length]};
+      animation-delay:${Math.random()*14}s;
+      animation-duration:${12+Math.random()*16}s;
     `;
     wrap.appendChild(b);
   }
 }
 
 
-/* ─────────────────────────────────────────
-   STORY GRID (menu screen)
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   STORY GRID
+   ════════════════════════════════════════════════ */
 function buildStoryGrid() {
   const grid = document.getElementById('story-grid');
-
   STORIES.forEach((story, index) => {
     const card = document.createElement('button');
     card.className = 'story-card';
-    card.style.background = `linear-gradient(135deg, ${story.color1}, ${story.color2})`;
-    card.style.color       = story.textColor;
+    card.id = `card-${story.id}`;
+    card.style.background = `linear-gradient(135deg,${story.color1},${story.color2})`;
+    card.style.color = story.textColor;
     card.innerHTML = `
       <div class="card-glow"></div>
-      <div class="card-emoji" style="animation-delay: ${index * 0.4}s">${story.emoji}</div>
+      <div class="card-emoji" style="animation-delay:${index*0.4}s">${story.emoji}</div>
       <div class="card-num">Cerita ${story.id}</div>
       <div class="card-title">${story.title}</div>
       <div class="card-preview">${story.preview}</div>
+      <div class="card-done-badge hidden" id="badge-${story.id}">⭐</div>
     `;
-    card.addEventListener('click', () => openStory(story));
+    card.addEventListener('click', () => { playClick(); openStory(story); });
     grid.appendChild(card);
   });
+  refreshBadges();
+}
+
+/** Refresh completed badges on all cards */
+function refreshBadges() {
+  STORIES.forEach(s => {
+    const badge = document.getElementById(`badge-${s.id}`);
+    if (badge) badge.classList.toggle('hidden', !isDone(s.id));
+  });
+  showProgressBanner();
+}
+
+/** Show "X / 6 cerita selesai" banner */
+function showProgressBanner() {
+  const count = getDoneCount();
+  const banner = document.getElementById('progress-banner');
+  if (!banner) return;
+  if (count === 0) {
+    banner.style.display = 'none';
+  } else {
+    banner.style.display = 'block';
+    banner.textContent = count === STORIES.length
+      ? `🎉 Syabas! Semua ${STORIES.length} cerita telah dibaca!`
+      : `⭐ ${count} / ${STORIES.length} cerita selesai`;
+  }
 }
 
 
-/* ─────────────────────────────────────────
-   OPEN STORY (navigate to story screen)
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   OPEN STORY
+   ════════════════════════════════════════════════ */
 function openStory(story) {
+  // Switch screens FIRST — immediate visual feedback
+  document.getElementById('screen-menu').style.display  = 'none';
+  const ss = document.getElementById('screen-story');
+  ss.style.display = 'flex';
+  ss.classList.remove('screen-in');
+  void ss.offsetWidth;
+  ss.classList.add('screen-in');
+
   currentStory = story;
 
-  // Populate header
+  // Apply story scene background
+  ss.style.background = story.sceneBg || 'var(--bg)';
+
+  // Header
   document.getElementById('header-title').textContent = story.title;
   document.getElementById('header-emoji').textContent = story.emoji;
 
-  // Character stage colours & emojis
+  // Character stage
   const stage = document.getElementById('char-stage');
-  stage.style.background = `linear-gradient(135deg, ${story.color1}22, ${story.color2}22)`;
+  stage.classList.remove('playing');
   document.getElementById('char-main').textContent      = story.charMain;
   document.getElementById('char-secondary').textContent = story.charSecondary;
   document.getElementById('char-secondary').classList.remove('visible');
-  stage.classList.remove('playing');
 
-  // Progress bar gradient matches story colours
+  // Scene decorations
+  const sceneBg = document.getElementById('scene-bg');
+  sceneBg.innerHTML = '';
+  (story.decos || []).forEach((emoji, i) => {
+    const el = document.createElement('span');
+    el.className = 'scene-deco';
+    el.textContent = emoji;
+    const slot = DECO_SLOTS[i % DECO_SLOTS.length];
+    Object.assign(el.style, slot);
+    sceneBg.appendChild(el);
+  });
+
+  // Progress bar colour
   document.getElementById('progress-fill').style.background =
-    `linear-gradient(90deg, ${story.color1}, ${story.color2})`;
+    `linear-gradient(90deg,${story.color1},${story.color2})`;
 
-  // Build karaoke word spans
-  buildWordSpans(story);
+  // Build suku kata spans
+  try { buildWordSpans(story); } catch(e) { console.warn('buildWordSpans error:', e); }
 
-  // Reset music state
+  // Reset states
   musicEnabled = false;
   updateMusicBtn();
   stopMusic();
-
-  // Reset speech state
   if (synth) synth.cancel();
   isPaused = false;
   setPlayingState(false);
   resetProgress();
-
-  // Switch screens
-  document.getElementById('screen-menu').style.display  = 'none';
-  document.getElementById('screen-story').style.display = 'flex';
 }
 
 
-/* ─────────────────────────────────────────
+/* ════════════════════════════════════════════════
    BACK TO MENU
-───────────────────────────────────────── */
+   ════════════════════════════════════════════════ */
 function goBack() {
-  synth.cancel();
+  playClick();
+  if (synth) synth.cancel();
   stopMusic();
   isPaused = false;
   currentStory = null;
 
   document.getElementById('screen-story').style.display = 'none';
-  document.getElementById('screen-menu').style.display  = 'flex';
+  const menu = document.getElementById('screen-menu');
+  menu.style.display = 'flex';
+  menu.classList.remove('screen-in');
+  void menu.offsetWidth;
+  menu.classList.add('screen-in');
+
   document.getElementById('char-secondary').classList.remove('visible');
+  refreshBadges();
 }
 
 
-/* ─────────────────────────────────────────
+/* ════════════════════════════════════════════════
    MUSIC BUTTON
-───────────────────────────────────────── */
+   ════════════════════════════════════════════════ */
 function updateMusicBtn() {
   const btn = document.getElementById('btn-music');
-  if (musicEnabled) {
-    btn.textContent = '🔕 Muzik';
-    btn.classList.remove('muted');
-  } else {
-    btn.textContent = '🎵 Muzik';
-    btn.classList.add('muted');
-  }
+  btn.textContent = musicEnabled ? '🔕 Muzik' : '🎵 Muzik';
+  btn.classList.toggle('muted', !musicEnabled);
 }
 
 function toggleMusic() {
+  playClick();
   musicEnabled = !musicEnabled;
   updateMusicBtn();
-
-  if (musicEnabled && synth.speaking && !synth.paused) {
+  if (musicEnabled && synth && synth.speaking && !synth.paused) {
     startMusic();
   } else {
     stopMusic();
@@ -160,9 +205,9 @@ function toggleMusic() {
 }
 
 
-/* ─────────────────────────────────────────
+/* ════════════════════════════════════════════════
    SPEED SLIDER
-───────────────────────────────────────── */
+   ════════════════════════════════════════════════ */
 function initSpeedSlider() {
   const range = document.getElementById('speed-range');
   const label = document.getElementById('speed-label');
@@ -170,67 +215,64 @@ function initSpeedSlider() {
   function refresh() {
     const v   = parseFloat(range.value);
     const pct = ((v - range.min) / (range.max - range.min)) * 100;
-
-    // Track fill colour
     range.style.background =
-      `linear-gradient(to right, #FF6B35 ${pct}%, #ddd ${pct}%)`;
-
-    // Label
+      `linear-gradient(to right,#FF6B35 ${pct}%,rgba(255,255,255,0.3) ${pct}%)`;
     if      (v <= 0.60) label.textContent = 'Perlahan';
     else if (v <= 0.85) label.textContent = 'Sederhana';
     else if (v <= 1.10) label.textContent = 'Biasa';
     else                label.textContent = 'Pantas';
   }
-
   range.addEventListener('input', refresh);
   refresh();
 }
 
 
-/* ─────────────────────────────────────────
-   STAR BURST — shown when story finishes
-───────────────────────────────────────── */
-function showStarBurst() {
-  const el = document.createElement('div');
-  el.className = 'star-burst';
-  el.style.cssText = `
-    font-size: 2rem;
-    color: #FFD23F;
-    font-weight: 900;
-    text-shadow: 0 2px 12px rgba(0,0,0,0.3);
-    background: rgba(255,255,255,0.92);
-    padding: 20px 36px;
-    border-radius: 20px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-  `;
-  el.textContent = '⭐ Tahniah! Syabas! ⭐';
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3000);
-}
-
-
-/* ─────────────────────────────────────────
-   BUTTON EVENT BINDINGS
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   BUTTON BINDINGS
+   ════════════════════════════════════════════════ */
 function bindButtons() {
   document.getElementById('btn-play').addEventListener('click', () => {
-    if (currentStory) playStory(currentStory, musicEnabled);
+    if (!currentStory) return;
+    playClick();
+    // If resuming a pause — no countdown
+    if (isPaused) {
+      playStory(currentStory, musicEnabled);
+    } else {
+      // Fresh start — show countdown first
+      showCountdown(() => playStory(currentStory, musicEnabled));
+    }
   });
 
   document.getElementById('btn-pause').addEventListener('click', () => {
-    pauseStory(musicEnabled);
+    playClick(); pauseStory(musicEnabled);
   });
 
   document.getElementById('btn-stop').addEventListener('click', () => {
-    stopStory(musicEnabled);
+    playClick(); stopStory(musicEnabled);
   });
 
   document.getElementById('btn-music').addEventListener('click', toggleMusic);
-
   document.getElementById('btn-back').addEventListener('click', goBack);
 
-  // If voice changes mid-playback, stop and let user replay
   document.getElementById('voice-select').addEventListener('change', () => {
-    if (synth.speaking) stopStory(musicEnabled);
+    if (synth && synth.speaking) stopStory(musicEnabled);
+  });
+}
+
+
+/* ════════════════════════════════════════════════
+   STORY COMPLETE CALLBACK  (called by speech.js)
+   ════════════════════════════════════════════════ */
+function onStoryComplete() {
+  if (!currentStory) return;
+  markDone(currentStory.id);
+  refreshBadges();
+
+  showStarRating((action) => {
+    if (action === 'again') {
+      showCountdown(() => playStory(currentStory, musicEnabled));
+    } else {
+      goBack();
+    }
   });
 }

@@ -156,8 +156,9 @@ function playStory(story, musicEnabled) {
     completeProgress();
     setPlayingState(false);
     document.getElementById('char-stage').classList.remove('playing');
-    showStarBurst();
-    if (musicEnabled) setTimeout(stopMusic, 3000);
+    if (musicEnabled) setTimeout(stopMusic, 3500);
+    // Notify app.js — triggers star rating + badge save
+    if (typeof onStoryComplete === 'function') onStoryComplete();
   };
 
   utter.onerror = (e) => {
