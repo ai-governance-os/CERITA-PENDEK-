@@ -1,26 +1,22 @@
 /* ════════════════════════════════════════════════
    speech.js — Web Speech API + Karaoke Highlight
 
-   Highlighting strategy (two-layer):
-   1. PRIMARY  — onboundary word events (index-based, not charIndex)
-   2. FALLBACK — per-word setTimeout schedule, activated automatically
-                 if onboundary never fires within 1.5 s of playback start
+   双轨高亮策略:
+   TRACK A — 按字符位置比例预排 setTimeout (立即启动，确保一定highlight)
+   TRACK B — onboundary 事件实时修正对齐 (有就用，没有就靠A)
+   两者同时运行，wordIndex 只能前进不能后退，谁快谁主导。
    ════════════════════════════════════════════════ */
 
 const synth = window.speechSynthesis;
 
 /* ── state ── */
-let voices           = [];
-let currentUtterance = null;
-let wordSpans        = [];   // all <span class="word"> in DOM order
-let totalWords       = 0;
-let wordIndex        = 0;    // which word we are currently at
-let isPaused         = false;
-
-/* ── fallback timer ── */
-let highlightTimers   = [];  // array of setTimeout ids
-let onboundaryFired   = false;
-let fallbackCheckTimer = null;
+let voices    = [];
+let wordSpans = [];      // DOM span 列表
+let spanMap   = [];      // [{start, end, idx}] 字符位置映射
+let totalWords  = 0;
+let wordIndex   = 0;     // 当前进度（只增不减）
+let isPaused    = false;
+let highlightTimers = [];
 
 
 /* ════════════════════════════════════════════════
@@ -31,7 +27,6 @@ function loadVoices() {
   const sel = document.getElementById('voice-select');
   sel.innerHTML = '';
 
-  // Prefer Malay (ms-*) then Indonesian (id-*) then everything else
   const preferred = voices.filter(v => v.lang.startsWith('ms') || v.lang.startsWith('id'));
   const rest      = voices.filter(v => !v.lang.startsWith('ms') && !v.lang.startsWith('id'));
 
@@ -43,7 +38,6 @@ function loadVoices() {
     sel.appendChild(opt);
   });
 }
-
 synth.addEventListener('voiceschanged', loadVoices);
 loadVoices();
 
@@ -54,14 +48,15 @@ function getSelectedVoice() {
 
 
 /* ════════════════════════════════════════════════
-   BUILD WORD SPANS  (called from app.js on open)
+   BUILD WORD SPANS
    ════════════════════════════════════════════════ */
 function buildWordSpans(story) {
   const container = document.getElementById('story-text');
   container.innerHTML = '';
   wordSpans = [];
+  spanMap   = [];
 
-  story.paragraphs.forEach((para, paraIndex) => {
+  story.paragraphs.forEach((para, pi) => {
     para.split(/(\s+)/).forEach(token => {
       if (token.trim() === '') {
         container.appendChild(document.createTextNode(' '));
@@ -74,10 +69,9 @@ function buildWordSpans(story) {
         container.appendChild(document.createTextNode(' '));
       }
     });
-
-    if (paraIndex < story.paragraphs.length - 1) {
-      const gap       = document.createElement('span');
-      gap.className   = 'para-break';
+    if (pi < story.paragraphs.length - 1) {
+      const gap     = document.createElement('span');
+      gap.className = 'para-break';
       container.appendChild(gap);
     }
   });
@@ -87,25 +81,48 @@ function buildWordSpans(story) {
 
 
 /* ════════════════════════════════════════════════
-   CORE HIGHLIGHT — advance one word
+   BUILD CHAR MAP  (用正则解析，更可靠)
+   spanMap[i] = { start, end, idx }
    ════════════════════════════════════════════════ */
-function highlightWord(index) {
-  if (index < 0 || index >= wordSpans.length) return;
+function buildCharMap(fullText) {
+  spanMap = [];
+  const regex = /\S+/g;
+  let match;
+  let spanIdx = 0;
 
-  // Dim all words before this one
-  for (let i = 0; i < index; i++) {
-    wordSpans[i].classList.remove('active');
-    wordSpans[i].classList.add('done');
+  while ((match = regex.exec(fullText)) !== null && spanIdx < wordSpans.length) {
+    spanMap.push({
+      start : match.index,
+      end   : match.index + match[0].length,
+      idx   : spanIdx
+    });
+    spanIdx++;
   }
+}
 
-  // Highlight the current word
-  const span = wordSpans[index];
-  span.classList.add('active');
-  span.classList.remove('done');
-  span.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  // Progress bar
-  updateProgress(Math.round(((index + 1) / totalWords) * 100));
+/* ════════════════════════════════════════════════
+   HIGHLIGHT CORE
+   ════════════════════════════════════════════════ */
+function highlightWord(idx) {
+  if (idx < 0 || idx >= wordSpans.length) return;
+
+  wordSpans.forEach((s, i) => {
+    if (i < idx)      { s.classList.remove('active'); s.classList.add('done'); }
+    else if (i === idx){ s.classList.add('active');   s.classList.remove('done'); }
+    // words after idx: leave as-is (未读)
+  });
+
+  wordSpans[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  updateProgress(Math.round(((idx + 1) / totalWords) * 100));
+}
+
+/** 只有在新位置 >= 当前位置时才高亮（防止倒退） */
+function advanceTo(idx) {
+  if (idx > wordIndex || (idx === 0 && wordIndex === 0)) {
+    wordIndex = idx;
+    highlightWord(idx);
+  }
 }
 
 function clearAllHighlights() {
@@ -123,65 +140,62 @@ function updateProgress(pct) {
 
 
 /* ════════════════════════════════════════════════
-   TIMER FALLBACK
-   Activated when onboundary does not fire.
-   Schedules per-word highlights proportional
-   to each word's character length.
+   FIND NEAREST SPAN  (for onboundary charIndex)
    ════════════════════════════════════════════════ */
-function startTimerFallback(story, rate) {
+function findSpanByChar(charIndex) {
+  // 精确匹配
+  for (const e of spanMap) {
+    if (charIndex >= e.start && charIndex < e.end) return e.idx;
+  }
+  // 找最近
+  let best = 0, bestDist = Infinity;
+  spanMap.forEach((e, i) => {
+    const d = Math.abs(e.start - charIndex);
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
+}
+
+
+/* ════════════════════════════════════════════════
+   TRACK A — 预排计时器 (立即启动)
+   按每个词的字符位置在全文中的比例来估算时间点
+   ════════════════════════════════════════════════ */
+function scheduleWordTimers(fullText, rate) {
   clearTimers();
+  if (!spanMap.length) return;
 
-  // Build word list in the same order as wordSpans
-  const words = story.paragraphs
-    .join(' ')
-    .split(/\s+/)
-    .filter(w => w.length > 0);
+  const totalChars  = fullText.length;
+  // 马来语TTS: rate=1.0 约13字符/秒，加上句尾停顿略慢一点
+  const charsPerSec = 12 * rate;
+  const totalMs     = (totalChars / charsPerSec) * 1000;
 
-  // Average Malay/English speech: ~130 words/min at rate=1.0
-  // → ms per "average" 5-char word
-  const msPerAvgWord = (60 / 130) / rate * 1000;
-  const avgLen       = 5;
+  // TTS启动延迟约200ms
+  const startDelay = 200;
 
-  let delay = 300; // small startup delay
-
-  words.forEach((word, i) => {
-    // Longer words take proportionally longer to pronounce
-    const wordMs = (word.length / avgLen) * msPerAvgWord;
-    const d      = delay;
-
+  spanMap.forEach(entry => {
+    const delay = startDelay + (entry.start / totalChars) * totalMs;
     const t = setTimeout(() => {
-      if (i < wordSpans.length) {
-        wordIndex = i;
-        highlightWord(i);
+      // 只有在onboundary没跑到这里时才执行
+      if (entry.idx >= wordIndex) {
+        advanceTo(entry.idx);
       }
-    }, d);
-
+    }, delay);
     highlightTimers.push(t);
-    delay += Math.max(150, wordMs);
   });
 }
 
 function clearTimers() {
   highlightTimers.forEach(t => clearTimeout(t));
   highlightTimers = [];
-  if (fallbackCheckTimer) {
-    clearTimeout(fallbackCheckTimer);
-    fallbackCheckTimer = null;
-  }
 }
 
 
 /* ════════════════════════════════════════════════
-   PLAYBACK CONTROLS
+   PLAYBACK
    ════════════════════════════════════════════════ */
-
-/**
- * Play (or resume) the story.
- * @param {object}  story
- * @param {boolean} musicEnabled
- */
 function playStory(story, musicEnabled) {
-  // Resume from pause
+  // 续播
   if (isPaused && synth.paused) {
     synth.resume();
     isPaused = false;
@@ -190,18 +204,18 @@ function playStory(story, musicEnabled) {
     return;
   }
 
-  // Fresh start
+  // 全新开始
   synth.cancel();
   clearTimers();
   clearAllHighlights();
-  wordIndex        = 0;
-  onboundaryFired  = false;
+  wordIndex = 0;
 
   const fullText = story.paragraphs.join(' ');
-  const utter    = new SpeechSynthesisUtterance(fullText);
-  currentUtterance = utter;
+  buildCharMap(fullText);
 
-  const rate = parseFloat(document.getElementById('speed-range').value);
+  const utter = new SpeechSynthesisUtterance(fullText);
+  const rate  = parseFloat(document.getElementById('speed-range').value);
+
   utter.rate   = rate;
   utter.pitch  = 1.15;
   utter.volume = 1.0;
@@ -210,19 +224,17 @@ function playStory(story, musicEnabled) {
   const voice = getSelectedVoice();
   if (voice) utter.voice = voice;
 
-  /* ── PRIMARY: onboundary word events ── */
+  /* TRACK A — 预排计时器，立即开始 */
+  scheduleWordTimers(fullText, rate);
+
+  /* TRACK B — onboundary 实时修正 */
   utter.onboundary = (e) => {
     if (e.name !== 'word') return;
-
-    // First fire — cancel the fallback check and any scheduled timers
-    if (!onboundaryFired) {
-      onboundaryFired = true;
-      clearTimers();
-    }
-
-    if (wordIndex < wordSpans.length) {
-      highlightWord(wordIndex);
-      wordIndex++;
+    const idx = findSpanByChar(e.charIndex);
+    // onboundary 跑得准，直接跳到正确位置（即使超过计时器）
+    if (idx >= wordIndex) {
+      wordIndex = idx;
+      highlightWord(idx);
     }
   };
 
@@ -244,44 +256,28 @@ function playStory(story, musicEnabled) {
   setPlayingState(true);
   if (musicEnabled) startMusic();
 
-  // Show secondary character after 2 s
   setTimeout(() => {
     document.getElementById('char-secondary').classList.add('visible');
   }, 2000);
-
-  /* ── FALLBACK CHECK: if onboundary never fires after 1.5 s ── */
-  fallbackCheckTimer = setTimeout(() => {
-    if (!onboundaryFired && synth.speaking) {
-      startTimerFallback(story, rate);
-    }
-  }, 1500);
 }
 
-/**
- * Pause speech.
- * @param {boolean} musicEnabled
- */
 function pauseStory(musicEnabled) {
   if (synth.speaking && !synth.paused) {
     synth.pause();
     isPaused = true;
+    clearTimers();
     setPlayingState(false);
     document.getElementById('char-stage').classList.remove('playing');
-    clearTimers(); // pause timers too
     if (musicEnabled) stopMusic();
   }
 }
 
-/**
- * Stop speech and reset everything.
- * @param {boolean} musicEnabled
- */
 function stopStory(musicEnabled) {
   synth.cancel();
   clearTimers();
-  isPaused = false;
-  clearAllHighlights();
+  isPaused  = false;
   wordIndex = 0;
+  clearAllHighlights();
   setPlayingState(false);
   document.getElementById('char-secondary').classList.remove('visible');
   document.getElementById('char-stage').classList.remove('playing');
@@ -289,10 +285,6 @@ function stopStory(musicEnabled) {
   if (musicEnabled) stopMusic();
 }
 
-/**
- * Show/hide Play vs Pause+Stop buttons and character jump animation.
- * @param {boolean} playing
- */
 function setPlayingState(playing) {
   document.getElementById('btn-play') .classList.toggle('hidden',  playing);
   document.getElementById('btn-pause').classList.toggle('hidden', !playing);
@@ -300,10 +292,7 @@ function setPlayingState(playing) {
   document.getElementById('char-stage').classList.toggle('playing', playing);
 }
 
-
-/* ════════════════════════════════════════════════
-   PAGE VISIBILITY — auto-pause when tab hidden
-   ════════════════════════════════════════════════ */
+/* 页面隐藏时自动暂停 */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && synth.speaking && !synth.paused) {
     synth.pause();
