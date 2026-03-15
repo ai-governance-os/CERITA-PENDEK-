@@ -27,11 +27,20 @@ function startMusic() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
+  // Resume suspended context (required by some browsers)
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().then(() => _scheduleMusic());
+    return;
+  }
+  _scheduleMusic();
+}
+
+function _scheduleMusic() {
   stopMusic();
   musicOn = true;
 
   const master = audioCtx.createGain();
-  master.gain.value = 0.12;
+  master.gain.value = 0.22;
   master.connect(audioCtx.destination);
   musicNodes.push(master);
 
