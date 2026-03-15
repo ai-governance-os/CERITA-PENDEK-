@@ -1,38 +1,42 @@
 /* ════════════════════════════════════════════════
    speech.js — Web Speech API + Karaoke Highlight
-   Handles voice loading, text-to-speech playback,
-   word-by-word highlighting, and progress tracking.
+
+   Highlighting strategy (two-layer):
+   1. PRIMARY  — onboundary word events (index-based, not charIndex)
+   2. FALLBACK — per-word setTimeout schedule, activated automatically
+                 if onboundary never fires within 1.5 s of playback start
    ════════════════════════════════════════════════ */
 
 const synth = window.speechSynthesis;
 
+/* ── state ── */
 let voices           = [];
 let currentUtterance = null;
-let wordSpans        = [];    // all <span class="word"> elements
-let spanCharMap      = [];    // [{start, end, span}] — char positions in full text
+let wordSpans        = [];   // all <span class="word"> in DOM order
 let totalWords       = 0;
+let wordIndex        = 0;    // which word we are currently at
 let isPaused         = false;
 
-/* ─────────────────────────────────────────
-   VOICE LOADING
-───────────────────────────────────────── */
+/* ── fallback timer ── */
+let highlightTimers   = [];  // array of setTimeout ids
+let onboundaryFired   = false;
+let fallbackCheckTimer = null;
 
-/**
- * Populate the voice <select> dropdown.
- * Called on page load and whenever voices change.
- */
+
+/* ════════════════════════════════════════════════
+   VOICE LOADING
+   ════════════════════════════════════════════════ */
 function loadVoices() {
   voices = synth.getVoices();
   const sel = document.getElementById('voice-select');
   sel.innerHTML = '';
 
-  // Prioritise Malay (ms) and Indonesian (id) voices
+  // Prefer Malay (ms-*) then Indonesian (id-*) then everything else
   const preferred = voices.filter(v => v.lang.startsWith('ms') || v.lang.startsWith('id'));
   const rest      = voices.filter(v => !v.lang.startsWith('ms') && !v.lang.startsWith('id'));
-  const ordered   = [...preferred, ...rest];
 
-  ordered.forEach((v, i) => {
-    const opt = document.createElement('option');
+  [...preferred, ...rest].forEach((v, i) => {
+    const opt       = document.createElement('option');
     opt.value       = v.name;
     opt.textContent = `${v.name} (${v.lang})`;
     if (i === 0) opt.selected = true;
@@ -49,29 +53,20 @@ function getSelectedVoice() {
 }
 
 
-/* ─────────────────────────────────────────
-   BUILD WORD SPANS (Karaoke Setup)
-───────────────────────────────────────── */
-
-/**
- * Render story paragraphs as individually-wrapped <span> words
- * so each word can be highlighted independently during playback.
- * @param {object} story - story object from data.js
- */
+/* ════════════════════════════════════════════════
+   BUILD WORD SPANS  (called from app.js on open)
+   ════════════════════════════════════════════════ */
 function buildWordSpans(story) {
   const container = document.getElementById('story-text');
   container.innerHTML = '';
-  wordSpans   = [];
-  spanCharMap = [];
+  wordSpans = [];
 
   story.paragraphs.forEach((para, paraIndex) => {
-    const tokens = para.split(/(\s+)/);
-
-    tokens.forEach(token => {
+    para.split(/(\s+)/).forEach(token => {
       if (token.trim() === '') {
         container.appendChild(document.createTextNode(' '));
       } else {
-        const span = document.createElement('span');
+        const span       = document.createElement('span');
         span.className   = 'word';
         span.textContent = token.trim();
         container.appendChild(span);
@@ -80,10 +75,9 @@ function buildWordSpans(story) {
       }
     });
 
-    // Add visual paragraph gap (not a <br> — keeps flow natural)
     if (paraIndex < story.paragraphs.length - 1) {
-      const gap = document.createElement('span');
-      gap.className = 'para-break';
+      const gap       = document.createElement('span');
+      gap.className   = 'para-break';
       container.appendChild(gap);
     }
   });
@@ -92,92 +86,35 @@ function buildWordSpans(story) {
 }
 
 
-/* ─────────────────────────────────────────
-   CHAR MAP — maps charIndex → span
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   CORE HIGHLIGHT — advance one word
+   ════════════════════════════════════════════════ */
+function highlightWord(index) {
+  if (index < 0 || index >= wordSpans.length) return;
 
-/**
- * Build a map of {start, end, span} from the full joined text.
- * Used to match `onboundary` charIndex back to the correct span.
- * @param {object} story
- */
-function buildCharMap(story) {
-  const fullText = story.paragraphs.join(' ');
-  spanCharMap = [];
-  let searchFrom = 0;
-
-  wordSpans.forEach(span => {
-    const word = span.textContent;
-    const pos  = fullText.indexOf(word, searchFrom);
-    if (pos !== -1) {
-      spanCharMap.push({ start: pos, end: pos + word.length, span });
-      searchFrom = pos + word.length;
-    }
-  });
-}
-
-
-/* ─────────────────────────────────────────
-   HIGHLIGHT LOGIC
-───────────────────────────────────────── */
-
-/**
- * Highlight the word at the given character index.
- * Words already read are dimmed; current word is yellow.
- * @param {number} charIndex
- */
-function highlightWordAtChar(charIndex) {
-  let found = null;
-
-  // Exact match
-  for (const entry of spanCharMap) {
-    if (charIndex >= entry.start && charIndex < entry.end) {
-      found = entry;
-      break;
-    }
+  // Dim all words before this one
+  for (let i = 0; i < index; i++) {
+    wordSpans[i].classList.remove('active');
+    wordSpans[i].classList.add('done');
   }
 
-  // Fallback: nearest upcoming word
-  if (!found) {
-    for (const entry of spanCharMap) {
-      if (charIndex < entry.end) {
-        found = entry;
-        break;
-      }
-    }
-  }
+  // Highlight the current word
+  const span = wordSpans[index];
+  span.classList.add('active');
+  span.classList.remove('done');
+  span.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  if (!found) return;
-
-  spanCharMap.forEach(e => {
-    e.span.classList.remove('active');
-    if (e.end <= found.start) {
-      e.span.classList.add('done');
-    }
-  });
-
-  found.span.classList.add('active');
-  found.span.classList.remove('done');
-
-  // Scroll word into view (smooth)
-  found.span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-  // Update progress bar
-  const doneCount = spanCharMap.filter(e => e.span.classList.contains('done')).length;
-  updateProgress(Math.round((doneCount / totalWords) * 100));
+  // Progress bar
+  updateProgress(Math.round(((index + 1) / totalWords) * 100));
 }
 
-function clearWordHighlights() {
+function clearAllHighlights() {
   wordSpans.forEach(s => s.classList.remove('active', 'done'));
-  spanCharMap = [];
   updateProgress(0);
 }
 
 function markAllDone() {
-  wordSpans.forEach(s => {
-    s.classList.remove('active');
-    s.classList.add('done');
-  });
+  wordSpans.forEach(s => { s.classList.remove('active'); s.classList.add('done'); });
 }
 
 function updateProgress(pct) {
@@ -185,17 +122,66 @@ function updateProgress(pct) {
 }
 
 
-/* ─────────────────────────────────────────
+/* ════════════════════════════════════════════════
+   TIMER FALLBACK
+   Activated when onboundary does not fire.
+   Schedules per-word highlights proportional
+   to each word's character length.
+   ════════════════════════════════════════════════ */
+function startTimerFallback(story, rate) {
+  clearTimers();
+
+  // Build word list in the same order as wordSpans
+  const words = story.paragraphs
+    .join(' ')
+    .split(/\s+/)
+    .filter(w => w.length > 0);
+
+  // Average Malay/English speech: ~130 words/min at rate=1.0
+  // → ms per "average" 5-char word
+  const msPerAvgWord = (60 / 130) / rate * 1000;
+  const avgLen       = 5;
+
+  let delay = 300; // small startup delay
+
+  words.forEach((word, i) => {
+    // Longer words take proportionally longer to pronounce
+    const wordMs = (word.length / avgLen) * msPerAvgWord;
+    const d      = delay;
+
+    const t = setTimeout(() => {
+      if (i < wordSpans.length) {
+        wordIndex = i;
+        highlightWord(i);
+      }
+    }, d);
+
+    highlightTimers.push(t);
+    delay += Math.max(150, wordMs);
+  });
+}
+
+function clearTimers() {
+  highlightTimers.forEach(t => clearTimeout(t));
+  highlightTimers = [];
+  if (fallbackCheckTimer) {
+    clearTimeout(fallbackCheckTimer);
+    fallbackCheckTimer = null;
+  }
+}
+
+
+/* ════════════════════════════════════════════════
    PLAYBACK CONTROLS
-───────────────────────────────────────── */
+   ════════════════════════════════════════════════ */
 
 /**
- * Start reading the current story from the beginning.
- * If paused, resumes instead.
- * @param {object} story       - story object from data.js
+ * Play (or resume) the story.
+ * @param {object}  story
  * @param {boolean} musicEnabled
  */
 function playStory(story, musicEnabled) {
+  // Resume from pause
   if (isPaused && synth.paused) {
     synth.resume();
     isPaused = false;
@@ -206,28 +192,42 @@ function playStory(story, musicEnabled) {
 
   // Fresh start
   synth.cancel();
-  clearWordHighlights();
-
-  if (!spanCharMap.length) buildCharMap(story);
+  clearTimers();
+  clearAllHighlights();
+  wordIndex        = 0;
+  onboundaryFired  = false;
 
   const fullText = story.paragraphs.join(' ');
   const utter    = new SpeechSynthesisUtterance(fullText);
   currentUtterance = utter;
 
-  utter.rate   = parseFloat(document.getElementById('speed-range').value);
-  utter.pitch  = 1.15;   // slightly higher — storytelling feel
+  const rate = parseFloat(document.getElementById('speed-range').value);
+  utter.rate   = rate;
+  utter.pitch  = 1.15;
   utter.volume = 1.0;
   utter.lang   = 'ms-MY';
 
   const voice = getSelectedVoice();
   if (voice) utter.voice = voice;
 
-  // Karaoke: highlight word on each boundary event
+  /* ── PRIMARY: onboundary word events ── */
   utter.onboundary = (e) => {
-    if (e.name === 'word') highlightWordAtChar(e.charIndex);
+    if (e.name !== 'word') return;
+
+    // First fire — cancel the fallback check and any scheduled timers
+    if (!onboundaryFired) {
+      onboundaryFired = true;
+      clearTimers();
+    }
+
+    if (wordIndex < wordSpans.length) {
+      highlightWord(wordIndex);
+      wordIndex++;
+    }
   };
 
   utter.onend = () => {
+    clearTimers();
     setPlayingState(false);
     markAllDone();
     updateProgress(100);
@@ -244,14 +244,21 @@ function playStory(story, musicEnabled) {
   setPlayingState(true);
   if (musicEnabled) startMusic();
 
-  // Show secondary character after a short delay
+  // Show secondary character after 2 s
   setTimeout(() => {
     document.getElementById('char-secondary').classList.add('visible');
   }, 2000);
+
+  /* ── FALLBACK CHECK: if onboundary never fires after 1.5 s ── */
+  fallbackCheckTimer = setTimeout(() => {
+    if (!onboundaryFired && synth.speaking) {
+      startTimerFallback(story, rate);
+    }
+  }, 1500);
 }
 
 /**
- * Pause ongoing speech.
+ * Pause speech.
  * @param {boolean} musicEnabled
  */
 function pauseStory(musicEnabled) {
@@ -260,18 +267,21 @@ function pauseStory(musicEnabled) {
     isPaused = true;
     setPlayingState(false);
     document.getElementById('char-stage').classList.remove('playing');
+    clearTimers(); // pause timers too
     if (musicEnabled) stopMusic();
   }
 }
 
 /**
- * Stop speech entirely and reset UI.
+ * Stop speech and reset everything.
  * @param {boolean} musicEnabled
  */
 function stopStory(musicEnabled) {
   synth.cancel();
+  clearTimers();
   isPaused = false;
-  clearWordHighlights();
+  clearAllHighlights();
+  wordIndex = 0;
   setPlayingState(false);
   document.getElementById('char-secondary').classList.remove('visible');
   document.getElementById('char-stage').classList.remove('playing');
@@ -280,7 +290,7 @@ function stopStory(musicEnabled) {
 }
 
 /**
- * Toggle play/pause button visibility and character animation.
+ * Show/hide Play vs Pause+Stop buttons and character jump animation.
  * @param {boolean} playing
  */
 function setPlayingState(playing) {
@@ -291,13 +301,14 @@ function setPlayingState(playing) {
 }
 
 
-/* ─────────────────────────────────────────
-   PAGE VISIBILITY — auto-pause when hidden
-───────────────────────────────────────── */
+/* ════════════════════════════════════════════════
+   PAGE VISIBILITY — auto-pause when tab hidden
+   ════════════════════════════════════════════════ */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && synth.speaking && !synth.paused) {
     synth.pause();
     isPaused = true;
+    clearTimers();
     setPlayingState(false);
   }
 });

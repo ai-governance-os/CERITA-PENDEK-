@@ -232,6 +232,5 @@ function bindButtons() {
   // If voice changes mid-playback, stop and let user replay
   document.getElementById('voice-select').addEventListener('change', () => {
     if (synth.speaking) stopStory(musicEnabled);
-    spanCharMap = [];
   });
 }
