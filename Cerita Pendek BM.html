@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cerita Pendek BM - Latihan Bercerita</title>
+<style>
+  :root {
+    --bg: #FFF8F0;
+    --accent: #FF6B35;
+    --shadow: rgba(0,0,0,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── FLOATING BUBBLES BACKGROUND ── */
+  .bubbles {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+  }
+  .bubble {
+    position: absolute; border-radius: 50%;
+    animation: rise linear infinite;
+    opacity: 0.18;
+  }
+  @keyframes rise {
+    0%   { transform: translateY(110vh) scale(1); }
+    100% { transform: translateY(-20vh) scale(1.1); }
+  }
+
+  /* ── MENU SCREEN ── */
+  #screen-menu {
+    position: relative; z-index: 1;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 30px 16px 50px;
+  }
+  .app-title {
+    font-size: clamp(1.6rem, 5vw, 2.8rem);
+    font-weight: 900;
+    text-align: center;
+    background: linear-gradient(135deg, #FF6B35, #F7931E, #FFD23F);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
+    text-shadow: none;
+    filter: drop-shadow(0 2px 6px rgba(255,107,53,0.3));
+  }
+  .app-sub {
+    color: #888; font-size: 1rem; margin-bottom: 32px; text-align: center;
+  }
+  .story-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    width: 100%; max-width: 960px;
+  }
+  .story-card {
+    border: none; border-radius: 20px;
+    padding: 24px 20px;
+    cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: transform 0.25s, box-shadow 0.25s;
+    box-shadow: 0 6px 24px var(--shadow);
+    position: relative; overflow: hidden;
+  }
+  .story-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 14px 36px rgba(0,0,0,0.18); }
+  .story-card:active { transform: scale(0.97); }
+  .card-emoji {
+    font-size: 3.5rem;
+    animation: bounce 2.4s ease-in-out infinite;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+  }
+  @keyframes bounce {
+    0%,100% { transform: translateY(0); }
+    50%      { transform: translateY(-10px); }
+  }
+  .card-num {
+    font-size: 0.7rem; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+    opacity: 0.6;
+  }
+  .card-title {
+    font-size: 1.1rem; font-weight: 800; text-align: center; line-height: 1.3;
+  }
+  .card-preview {
+    font-size: 0.8rem; opacity: 0.7; text-align: center; line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card-glow {
+    position: absolute; inset: 0; border-radius: 20px;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.35), transparent 60%);
+    pointer-events: none;
+  }
+
+  /* ── STORY SCREEN ── */
+  #screen-story {
+    display: none; position: fixed; inset: 0; z-index: 10;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .story-header {
+    padding: 16px 20px 12px;
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    flex-shrink: 0;
+  }
+  .btn-back {
+    background: none; border: 2px solid currentColor;
+    border-radius: 50%; width: 40px; height: 40px;
+    font-size: 1.1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .btn-back:hover { background: rgba(0,0,0,0.06); }
+  .header-title {
+    flex: 1; font-size: 1.1rem; font-weight: 800; line-height: 1.2;
+  }
+  .header-emoji { font-size: 2rem; flex-shrink: 0; }
+
+  /* character animation area */
+  .char-stage {
+    height: 120px; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; position: relative; overflow: hidden;
+  }
+  .char-main {
+    font-size: 4rem;
+    position: absolute;
+    animation: float 3s ease-in-out infinite;
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.18));
+    transition: left 0.6s ease;
+    left: 45%;
+  }
+  .char-secondary {
+    font-size: 2.5rem;
+    position: absolute;
+    right: 20%;
+    animation: float 3.5s ease-in-out infinite reverse;
+    filter: drop-shadow(0 6px 12px rgba(0,0,0,0.15));
+    opacity: 0;
+    transition: opacity 0.6s;
+  }
+  .char-secondary.visible { opacity: 1; }
+  @keyframes float {
+    0%,100% { transform: translateY(0) rotate(-3deg); }
+    50%      { transform: translateY(-16px) rotate(3deg); }
+  }
+  @keyframes jump {
+    0%,100% { transform: translateY(0) scale(1); }
+    40%      { transform: translateY(-30px) scale(1.1); }
+    60%      { transform: translateY(-20px) scale(1.05); }
+  }
+  .playing .char-main { animation: jump 1.8s ease-in-out infinite; }
+
+  /* text area */
+  .text-wrap {
+    flex: 1; overflow-y: auto;
+    padding: 20px 24px 10px;
+    background: white;
+  }
+  .story-text {
+    font-size: clamp(1rem, 2.5vw, 1.25rem);
+    line-height: 2.0;
+    color: #333;
+  }
+  .story-text .word {
+    display: inline;
+    border-radius: 4px;
+    padding: 2px 1px;
+    transition: background 0.15s, color 0.15s;
+    cursor: default;
+  }
+  .story-text .word.active {
+    background: #FFD23F;
+    color: #333;
+    border-radius: 5px;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(255,210,63,0.5);
+  }
+  .story-text .word.done {
+    color: #aaa;
+  }
+  .story-text .para-break { display: block; height: 0.8em; }
+
+  /* controls */
+  .controls {
+    padding: 14px 20px 20px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.07);
+    flex-shrink: 0;
+  }
+  .ctrl-row {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    margin-bottom: 12px;
+  }
+  .btn-ctrl {
+    border: none; border-radius: 50px;
+    padding: 12px 28px;
+    font-size: 1rem; font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+  }
+  .btn-ctrl:hover { transform: translateY(-2px); box-shadow: 0 7px 20px rgba(0,0,0,0.18); }
+  .btn-ctrl:active { transform: scale(0.95); }
+  .btn-play  { background: #2ECC71; color: white; font-size: 1.1rem; padding: 14px 36px; }
+  .btn-pause { background: #F39C12; color: white; }
+  .btn-stop  { background: #E74C3C; color: white; }
+  .btn-music { background: #9B59B6; color: white; }
+  .btn-music.muted { background: #95a5a6; }
+
+  /* speed slider */
+  .speed-row {
+    display: flex; align-items: center; gap: 10px; justify-content: center;
+    font-size: 0.85rem; color: #666;
+  }
+  .speed-row input[type=range] {
+    -webkit-appearance: none; width: 160px; height: 6px;
+    border-radius: 4px; outline: none; cursor: pointer;
+  }
+  .voice-select-row {
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+    font-size: 0.82rem; color: #666; margin-top: 8px;
+  }
+  .voice-select-row select {
+    font-size: 0.82rem; border-radius: 8px;
+    border: 1px solid #ddd; padding: 4px 8px;
+    max-width: 220px;
+  }
+
+  /* progress bar */
+  .progress-bar-wrap {
+    width: 100%; height: 6px; background: #eee;
+    border-radius: 4px; overflow: hidden; margin-bottom: 12px;
+  }
+  .progress-bar-fill {
+    height: 100%; border-radius: 4px;
+    width: 0%; transition: width 0.3s;
+  }
+
+  /* ── UTILITIES ── */
+  .hidden { display: none !important; }
+
+  /* scrollbar */
+  .text-wrap::-webkit-scrollbar { width: 5px; }
+  .text-wrap::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+  /* star animation on finish */
+  .star-burst {
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3rem; opacity: 0;
+    animation: starshow 2.5s ease forwards;
+  }
+  @keyframes starshow {
+    0%  { opacity: 0; transform: scale(0.5); }
+    30% { opacity: 1; transform: scale(1.3); }
+    70% { opacity: 1; transform: scale(1); }
+    100%{ opacity: 0; transform: scale(0.8); }
+  }
+
+  @media (max-width: 480px) {
+    .story-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
+    .story-card { padding: 16px 12px; }
+    .card-emoji { font-size: 2.6rem; }
+    .card-title { font-size: 0.9rem; }
+    .card-preview { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Floating bubbles -->
+<div class="bubbles" id="bubbles"></div>
+
+<!-- ══════════ MENU ══════════ -->
+<div id="screen-menu">
+  <h1 class="app-title">Cerita Pendek BM</h1>
+  <p class="app-sub">Pilih cerita untuk berlatih bercerita ✨</p>
+  <div class="story-grid" id="story-grid"></div>
+</div>
+
+<!-- ══════════ STORY ══════════ -->
+<div id="screen-story">
+  <div class="story-header" id="story-header">
+    <button class="btn-back" id="btn-back" title="Kembali">←</button>
+    <div class="header-title" id="header-title"></div>
+    <div class="header-emoji" id="header-emoji"></div>
+  </div>
+
+  <div class="char-stage" id="char-stage">
+    <div class="char-main" id="char-main"></div>
+    <div class="char-secondary" id="char-secondary"></div>
+  </div>
+
+  <div class="text-wrap" id="text-wrap">
+    <div class="story-text" id="story-text"></div>
+  </div>
+
+  <div class="controls">
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+    <div class="ctrl-row">
+      <button class="btn-ctrl btn-play"  id="btn-play">▶ Main</button>
+      <button class="btn-ctrl btn-pause hidden" id="btn-pause">⏸ Jeda</button>
+      <button class="btn-ctrl btn-stop  hidden" id="btn-stop">⏹ Berhenti</button>
+      <button class="btn-ctrl btn-music" id="btn-music">🎵 Muzik</button>
+    </div>
+    <div class="speed-row">
+      <span>🐢</span>
+      <input type="range" id="speed-range" min="0.5" max="1.3" step="0.05" value="0.78">
+      <span>🐇</span>
+      <span id="speed-label" style="min-width:40px">Perlahan</span>
+    </div>
+    <div class="voice-select-row">
+      <span>🎙</span>
+      <select id="voice-select"><option value="">Pilih Suara...</option></select>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  STORY DATA
+// ═══════════════════════════════════════════
+const STORIES = [
+  {
+    id: 1,
+    title: "Anjing dan Bayangnya",
+    emoji: "🐕",
+    charMain: "🐕",
+    charSecondary: "🌊",
+    color1: "#FF6B6B", color2: "#FFA07A",
+    text: "#FFFFFF",
+    preview: "Kisah anjing tamak yang kehilangan tulangnya di sungai...",
+    paragraphs: [
+      "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah anjing dan bayangnya.",
+      "Pada suatu hari, anjing berasa sangat bertuah kerana mendapat seketul tulang yang besar dari pasar. Anjing menggonggong tulang tersebut sambil berlari ke tempat yang selamat untuk memakannya.",
+      "Anjing pun sampai di sebatang sungai yang sangat jernih airnya. Tiba-tiba anjing berhenti lalu melihat ke dalam air sungai. Ia ternampak seekor anjing yang memandang kepadanya dan menggonggong tulang juga!",
+      "Anjing terfikir di dalam hatinya, \"Tulang kepunyaan anjing itu lagi besar dari tulang aku, lebih baik aku merampas tulangnya supaya aku dapat dua tulang.\"",
+      "Ketika anjing membuka mulut untuk menarik tulang tersebut, tulang di dalam mulutnya terjatuh ke dalam anak sungai. Tulang itu terus tenggelam di bawa arus sungai.",
+      "Ketika itu, barulah anjing tersedar bawa yang ia nampak adalahnya bayang nya sendiri. Anjing berlalu pergi dengan penuh rasa penyesalan.",
+      "Sekian terima kasih."
+    ]
+  },
+  {
+    id: 2,
+    title: "Kura-Kura Ingin Terbang",
+    emoji: "🐢",
+    charMain: "🐢",
+    charSecondary: "🦅",
+    color1: "#27AE60", color2: "#2ECC71",
+    text: "#FFFFFF",
+    preview: "Kura-kura yang ingin terbang seperti helang...",
+    paragraphs: [
+      "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kura-Kura Ingin Terbang.",
+      "Pada suatu hari, sang kura-kura ternampak seekor helang.",
+      "Ajarkan aku terbang,",
+      "Kau tidak mempunyai sayap,",
+      "Kura-kura terus merayu sehinggalah helang bersetuju.",
+      "Helang pun mengangkat kura-kura hingga ke udara. Kemudian helang melepaskan kura-kura dan menyuruhnya mengibarkan kakinya seperti sayap.",
+      "Malangnya, kura-kura jatuh menjunam ke bumi dan mati.",
+      "Sekian, terima kasih."
+    ]
+  },
+  {
+    id: 3,
+    title: "Burung Merpati Dan Semut",
+    emoji: "🕊️",
+    charMain: "🕊️",
+    charSecondary: "🐜",
+    color1: "#2980B9", color2: "#3498DB",
+    text: "#FFFFFF",
+    preview: "Kisah persahabatan merpati dan semut yang saling tolong-menolong...",
+    paragraphs: [
+      "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Burung Merpati Dan Semut.",
+      "Seekor semut pergi ke tepi sungai untuk minum air. Tiba-tiba semut terjatuh ke dalam sungai. \"Tolong, tolong\" jerit semut.",
+      "Burung merpati segera menjatuhkan sehelai daun ke dalam sungai. Semut pun panjat ke atas daun tersebut dan selamatkan diri.",
+      "Beberapa hari kemudian, seorang pemburu ingin menembak merpati.",
+      "Semut segera mengigit kakinya. Burung merpati terdengar jeritan pemburu dan terus terbang menyelamatkan diri.",
+      "Sekian, terima kasih."
+    ]
+  },
+  {
+    id: 4,
+    title: "Bapa Katak Yang Bongkak",
+    emoji: "🐸",
+    charMain: "🐸",
+    charSecondary: "🐄",
+    color1: "#8E44AD", color2: "#9B59B6",
+    text: "#FFFFFF",
+    preview: "Bapa katak yang sombong mencuba mengembungkan perutnya...",
+    paragraphs: [
+      "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Bapa Katak yang bongkak.",
+      "Pada suatu hari, ketika anak katak sedang berjalan-jalan, ia ternampak seekor haiwan yang sangat besar.",
+      "Anak katak terus berlari pulang untuk memberitahu perkara itu kepada bapanya. Bapa katak tidak percaya mengenai hal tersebut.",
+      "Ahhh, tak mungkin ada haiwan yang lebih besar dan kuat seperti bapa, kata bapa katak dengan sombongnya.",
+      "Bapa katak pun terus minum air dan mengembungkan perutnya lalu bertanya kepada anaknya.",
+      "Adakah haiwan itu sebesar ini? tanya bapa katak.",
+      "Anak katak menggeleng kepala dan mengembungkan perutnya seperti belon. Anak katak tetap menggelengkan kepalanya.",
+      "Bapa katak tidak berpuas hati, ia terus mengembungkan lagi perutnya sehinggalah meletup. Akhirnya, bapa katak pun mati.",
+      "Sekian terima kasih."
+    ]
+  },
+  {
+    id: 5,
+    title: "Kawan Saya — Tan Jing Xian",
+    emoji: "👫",
+    charMain: "👦",
+    charSecondary: "👧",
+    color1: "#E67E22", color2: "#F39C12",
+    text: "#FFFFFF",
+    preview: "Cerita tentang kawan baik bernama Tan Jing Xian...",
+    paragraphs: [
+      "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kawan Saya.",
+      "Kawan saya bernama Tan Jing Xian. Dia kawan baik saya. Kami belajar di kelas yang sama. Kami selalu bermain bersama di sekolah. Tan Jing Xian seorang yang baik dan rajin. Saya sangat gembira mempunyai kawan seperti dia.",
+      "Sekian, terima kasih."
+    ]
+  },
+  {
+    id: 6,
+    title: "Kawan Saya — Lau Yan Tong",
+    emoji: "🤝",
+    charMain: "👧",
+    charSecondary: "👦",
+    color1: "#16A085", color2: "#1ABC9C",
+    text: "#FFFFFF",
+    preview: "Cerita tentang kawan baik bernama Lau Yan Tong...",
+    paragraphs: [
+      "Selamat pagi saya ucapkan kepada guru-guru dan rakan-rakan sekalian. Tajuk cerita saya ialah Kawan Saya.",
+      "Kawan saya bernama Lau Yan Tong. Dia kawan baik saya. Kami belajar di kelas yang sama. Kami selalu bermain bersama di sekolah. Tan Jing Xian seorang yang baik dan rajin. Saya sangat gembira mempunyai kawan seperti dia.",
+      "Sekian, terima kasih."
+    ]
+  }
+];
+
+// ═══════════════════════════════════════════
+//  BUBBLE BACKGROUND
+// ═══════════════════════════════════════════
+const BUBBLE_COLORS = ['#FF6B35','#FFD23F','#06D6A0','#118AB2','#EF476F','#A8DADC','#9B5DE5'];
+function makeBubbles() {
+  const wrap = document.getElementById('bubbles');
+  for (let i = 0; i < 18; i++) {
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    const size = 30 + Math.random() * 90;
+    const left = Math.random() * 100;
+    const delay = Math.random() * 14;
+    const dur   = 12 + Math.random() * 16;
+    b.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${left}%;
+      background:${BUBBLE_COLORS[i % BUBBLE_COLORS.length]};
+      animation-delay:${delay}s;
+      animation-duration:${dur}s;
+    `;
+    wrap.appendChild(b);
+  }
+}
+makeBubbles();
+
+// ═══════════════════════════════════════════
+//  BUILD STORY GRID
+// ═══════════════════════════════════════════
+const grid = document.getElementById('story-grid');
+STORIES.forEach((s, i) => {
+  const card = document.createElement('button');
+  card.className = 'story-card';
+  card.style.background = `linear-gradient(135deg, ${s.color1}, ${s.color2})`;
+  card.style.color = s.text;
+  card.innerHTML = `
+    <div class="card-glow"></div>
+    <div class="card-emoji" style="animation-delay:${i*0.4}s">${s.emoji}</div>
+    <div class="card-num">Cerita ${s.id}</div>
+    <div class="card-title">${s.title}</div>
+    <div class="card-preview">${s.preview}</div>
+  `;
+  card.addEventListener('click', () => openStory(s));
+  grid.appendChild(card);
+});
+
+// ═══════════════════════════════════════════
+//  WEB SPEECH API
+// ═══════════════════════════════════════════
+const synth = window.speechSynthesis;
+let voices = [];
+let currentUtterance = null;
+let wordSpans = [];
+let totalWords = 0;
+let wordsSpoken = 0;
+let isPaused = false;
+
+function loadVoices() {
+  voices = synth.getVoices();
+  const sel = document.getElementById('voice-select');
+  sel.innerHTML = '';
+
+  // Preferred: Malay voices first, then Indonesian, then English
+  const preferred = voices.filter(v => v.lang.startsWith('ms') || v.lang.startsWith('id'));
+  const others    = voices.filter(v => !v.lang.startsWith('ms') && !v.lang.startsWith('id'));
+  const ordered   = [...preferred, ...others];
+
+  ordered.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = `${v.name} (${v.lang})`;
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+synth.addEventListener('voiceschanged', loadVoices);
+loadVoices();
+
+function getSelectedVoice() {
+  const name = document.getElementById('voice-select').value;
+  return voices.find(v => v.name === name) || null;
+}
+
+// ═══════════════════════════════════════════
+//  WEB AUDIO — BACKGROUND MUSIC
+// ═══════════════════════════════════════════
+let audioCtx = null;
+let musicNodes = [];
+let musicOn = false;
+const PENTATONIC = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25]; // C D E G A c d e
+
+function startMusic(color1) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  stopMusic();
+  musicOn = true;
+
+  // Master gain
+  const master = audioCtx.createGain();
+  master.gain.value = 0.12;
+  master.connect(audioCtx.destination);
+  musicNodes.push(master);
+
+  // Gentle reverb simulation — convolve with short impulse
+  function playNote(freq, time, dur, vol=0.5) {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(vol, time + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(time);
+    osc.stop(time + dur + 0.1);
+    musicNodes.push(osc);
+  }
+
+  // Lullaby-style melody loop
+  const MELODY = [0, 2, 4, 5, 4, 2, 0, 1, 2, 4, 2, 0, 5, 4, 2, 4];
+  const BASE   = [0, 4, 0, 4, 0, 4, 0, 4];
+  const BPM    = 76;
+  const beat   = 60 / BPM;
+  const now    = audioCtx.currentTime + 0.1;
+  const bars   = 4;
+
+  for (let rep = 0; rep < bars; rep++) {
+    MELODY.forEach((idx, i) => {
+      playNote(PENTATONIC[idx % PENTATONIC.length], now + rep*MELODY.length*beat*0.6 + i*beat*0.6, beat*0.8, 0.45);
+    });
+    BASE.forEach((idx, i) => {
+      playNote(PENTATONIC[idx]/2, now + rep*BASE.length*beat + i*beat, beat*1.6, 0.25);
+    });
+  }
+  // Loop via setTimeout
+  musicNodes._loopTimer = setTimeout(() => { if(musicOn) startMusic(color1); }, (bars * MELODY.length * beat * 0.6) * 1000);
+}
+
+function stopMusic() {
+  musicOn = false;
+  clearTimeout(musicNodes._loopTimer);
+  musicNodes.forEach(n => {
+    try { if (n.stop) n.stop(); if (n.disconnect) n.disconnect(); } catch(e){}
+  });
+  musicNodes = [];
+}
+
+// ═══════════════════════════════════════════
+//  OPEN STORY
+// ═══════════════════════════════════════════
+let currentStory = null;
+let musicEnabled = false;
+
+function openStory(s) {
+  currentStory = s;
+
+  // Header
+  document.getElementById('header-title').textContent = s.title;
+  document.getElementById('header-emoji').textContent = s.emoji;
+
+  // Character stage
+  const stage = document.getElementById('char-stage');
+  stage.style.background = `linear-gradient(135deg, ${s.color1}22, ${s.color2}22)`;
+  document.getElementById('char-main').textContent = s.charMain;
+  document.getElementById('char-secondary').textContent = s.charSecondary;
+  document.getElementById('char-secondary').classList.remove('visible');
+
+  // Progress bar color
+  document.getElementById('progress-fill').style.background = `linear-gradient(90deg, ${s.color1}, ${s.color2})`;
+
+  // Build word spans
+  buildWordSpans(s);
+
+  // Screens
+  document.getElementById('screen-menu').style.display = 'none';
+  const ss = document.getElementById('screen-story');
+  ss.style.display = 'flex';
+
+  // Reset controls
+  resetControls();
+  synth.cancel();
+  isPaused = false;
+  wordsSpoken = 0;
+  updateProgress(0);
+
+  // Music button state
+  musicEnabled = false;
+  updateMusicBtn();
+}
+
+function buildWordSpans(s) {
+  const container = document.getElementById('story-text');
+  container.innerHTML = '';
+  wordSpans = [];
+
+  s.paragraphs.forEach((para, pi) => {
+    const words = para.split(/(\s+)/);
+    words.forEach(token => {
+      if (token.trim() === '') {
+        if (token.includes('\n') || token.length > 1) {
+          container.appendChild(document.createTextNode(' '));
+        } else {
+          container.appendChild(document.createTextNode(' '));
+        }
+      } else {
+        const span = document.createElement('span');
+        span.className = 'word';
+        span.textContent = token.trim();
+        container.appendChild(span);
+        wordSpans.push(span);
+        container.appendChild(document.createTextNode(' '));
+      }
+    });
+    if (pi < s.paragraphs.length - 1) {
+      const br = document.createElement('span');
+      br.className = 'para-break';
+      container.appendChild(br);
+    }
+  });
+  totalWords = wordSpans.length;
+}
+
+// ═══════════════════════════════════════════
+//  SPEECH — PLAY / PAUSE / STOP
+// ═══════════════════════════════════════════
+function playStory() {
+  if (!currentStory) return;
+  if (isPaused && synth.paused) {
+    synth.resume();
+    isPaused = false;
+    setPlayingState(true);
+    if (musicEnabled) startMusic(currentStory.color1);
+    return;
+  }
+
+  synth.cancel();
+  clearWordHighlights();
+  wordsSpoken = 0;
+
+  const fullText = currentStory.paragraphs.join(' ');
+  const utter = new SpeechSynthesisUtterance(fullText);
+  currentUtterance = utter;
+
+  const speed = parseFloat(document.getElementById('speed-range').value);
+  utter.rate  = speed;
+  utter.pitch = 1.15;
+  utter.volume = 1.0;
+  utter.lang  = 'ms-MY';
+
+  const voice = getSelectedVoice();
+  if (voice) utter.voice = voice;
+
+  // Word boundary highlight
+  utter.onboundary = (e) => {
+    if (e.name === 'word') {
+      highlightWordAtChar(e.charIndex, e.charLength);
+    }
+  };
+
+  utter.onend = () => {
+    setPlayingState(false);
+    highlightAll('done');
+    updateProgress(100);
+    showStarBurst();
+    if (musicEnabled) setTimeout(stopMusic, 3000);
+    document.getElementById('char-stage').classList.remove('playing');
+  };
+
+  utter.onerror = (e) => {
+    if (e.error !== 'interrupted') console.warn('Speech error:', e.error);
+  };
+
+  synth.speak(utter);
+  setPlayingState(true);
+  if (musicEnabled) startMusic(currentStory.color1);
+
+  // Show secondary character after a moment
+  setTimeout(() => {
+    document.getElementById('char-secondary').classList.add('visible');
+  }, 2000);
+}
+
+function pauseStory() {
+  if (synth.speaking && !synth.paused) {
+    synth.pause();
+    isPaused = true;
+    setPlayingState(false);
+    if (musicEnabled) stopMusic();
+    document.getElementById('char-stage').classList.remove('playing');
+  }
+}
+
+function stopStory() {
+  synth.cancel();
+  isPaused = false;
+  clearWordHighlights();
+  updateProgress(0);
+  setPlayingState(false);
+  stopMusic();
+  document.getElementById('char-secondary').classList.remove('visible');
+  document.getElementById('char-stage').classList.remove('playing');
+  document.getElementById('text-wrap').scrollTop = 0;
+}
+
+function resetControls() {
+  setPlayingState(false);
+}
+
+function setPlayingState(playing) {
+  document.getElementById('btn-play').classList.toggle('hidden', playing);
+  document.getElementById('btn-pause').classList.toggle('hidden', !playing);
+  document.getElementById('btn-stop').classList.toggle('hidden', !playing);
+  if (playing) {
+    document.getElementById('char-stage').classList.add('playing');
+  }
+}
+
+// ═══════════════════════════════════════════
+//  WORD HIGHLIGHT
+// ═══════════════════════════════════════════
+let charOffset = 0;
+let spanCharMap = []; // [{start, end, span}]
+
+function buildCharMap() {
+  const fullText = currentStory.paragraphs.join(' ');
+  spanCharMap = [];
+  let idx = 0;
+  wordSpans.forEach(span => {
+    const word = span.textContent;
+    const pos  = fullText.indexOf(word, idx);
+    if (pos !== -1) {
+      spanCharMap.push({ start: pos, end: pos + word.length, span });
+      idx = pos + word.length;
+    }
+  });
+}
+
+function highlightWordAtChar(charIndex, charLen) {
+  if (!spanCharMap.length) buildCharMap();
+  let found = null;
+  spanCharMap.forEach(entry => {
+    if (charIndex >= entry.start && charIndex < entry.end) {
+      found = entry;
+    }
+  });
+  if (!found) {
+    // fallback: nearest
+    for (let i = 0; i < spanCharMap.length; i++) {
+      if (charIndex < spanCharMap[i].end) { found = spanCharMap[i]; break; }
+    }
+  }
+  if (found) {
+    spanCharMap.forEach(e => {
+      e.span.classList.remove('active');
+      if (e.end <= found.start) e.span.classList.add('done');
+    });
+    found.span.classList.add('active');
+    found.span.classList.remove('done');
+
+    // Auto-scroll
+    found.span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Progress
+    const doneCount = spanCharMap.filter(e => e.span.classList.contains('done')).length;
+    updateProgress(Math.round(doneCount / totalWords * 100));
+  }
+}
+
+function clearWordHighlights() {
+  wordSpans.forEach(s => { s.classList.remove('active','done'); });
+  spanCharMap = [];
+  updateProgress(0);
+}
+
+function highlightAll(cls) {
+  wordSpans.forEach(s => { s.classList.remove('active'); s.classList.add(cls); });
+}
+
+function updateProgress(pct) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+// ═══════════════════════════════════════════
+//  STAR BURST ON FINISH
+// ═══════════════════════════════════════════
+function showStarBurst() {
+  const div = document.createElement('div');
+  div.className = 'star-burst';
+  div.textContent = '⭐ Tahniah! Syabas! ⭐';
+  div.style.cssText = `
+    font-size:2rem; color:#FFD23F; font-weight:900;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    background:rgba(255,255,255,0.92); padding:20px 36px;
+    border-radius:20px; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  `;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
+
+// ═══════════════════════════════════════════
+//  MUSIC TOGGLE
+// ═══════════════════════════════════════════
+function updateMusicBtn() {
+  const btn = document.getElementById('btn-music');
+  btn.textContent = musicEnabled ? '🔕 Muzik' : '🎵 Muzik';
+  btn.classList.toggle('muted', !musicEnabled);
+}
+
+document.getElementById('btn-music').addEventListener('click', () => {
+  musicEnabled = !musicEnabled;
+  updateMusicBtn();
+  if (musicEnabled && synth.speaking && !synth.paused) {
+    startMusic(currentStory ? currentStory.color1 : '#FF6B35');
+  } else {
+    stopMusic();
+    musicOn = false;
+  }
+});
+
+// ═══════════════════════════════════════════
+//  SPEED LABEL
+// ═══════════════════════════════════════════
+const speedRange = document.getElementById('speed-range');
+const speedLabel = document.getElementById('speed-label');
+function updateSpeedLabel(v) {
+  if (v <= 0.6)  speedLabel.textContent = 'Perlahan';
+  else if (v <= 0.85) speedLabel.textContent = 'Sederhana';
+  else if (v <= 1.1)  speedLabel.textContent = 'Biasa';
+  else                speedLabel.textContent = 'Pantas';
+}
+speedRange.addEventListener('input', () => updateSpeedLabel(parseFloat(speedRange.value)));
+updateSpeedLabel(parseFloat(speedRange.value));
+
+// ═══════════════════════════════════════════
+//  BUTTON EVENTS
+// ═══════════════════════════════════════════
+document.getElementById('btn-play').addEventListener('click',  playStory);
+document.getElementById('btn-pause').addEventListener('click', pauseStory);
+document.getElementById('btn-stop').addEventListener('click',  stopStory);
+
+document.getElementById('btn-back').addEventListener('click', () => {
+  synth.cancel();
+  stopMusic();
+  isPaused = false;
+  document.getElementById('screen-story').style.display = 'none';
+  document.getElementById('screen-menu').style.display = 'flex';
+  currentStory = null;
+  document.getElementById('char-secondary').classList.remove('visible');
+});
+
+// Rebuild char map on voice/speed change
+document.getElementById('voice-select').addEventListener('change', () => {
+  if (synth.speaking) stopStory();
+  spanCharMap = [];
+});
+
+// ═══════════════════════════════════════════
+//  STYLE speed slider dynamically
+// ═══════════════════════════════════════════
+function styleSlider() {
+  const pct = (speedRange.value - speedRange.min) / (speedRange.max - speedRange.min) * 100;
+  speedRange.style.background = `linear-gradient(to right, #FF6B35 ${pct}%, #ddd ${pct}%)`;
+}
+speedRange.addEventListener('input', styleSlider);
+styleSlider();
+
+// ═══════════════════════════════════════════
+//  HANDLE PAGE VISIBILITY — pause speech
+// ═══════════════════════════════════════════
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && synth.speaking && !synth.paused) {
+    synth.pause(); isPaused = true;
+    document.getElementById('btn-play').classList.remove('hidden');
+    document.getElementById('btn-pause').classList.add('hidden');
+  }
+});
+
+</script>
+</body>
+</html>
