@@ -17,7 +17,9 @@ let progressTimer = null;
    VOICE LOADING
    ════════════════════════════════════════════════ */
 function loadVoices() {
-  voices = synth.getVoices();
+  const v = synth.getVoices();
+  if (!v.length) return; // not ready yet
+  voices = v;
   const sel = document.getElementById('voice-select');
   sel.innerHTML = '';
 
@@ -34,6 +36,12 @@ function loadVoices() {
 }
 synth.addEventListener('voiceschanged', loadVoices);
 loadVoices();
+// Some mobile browsers (especially iOS) delay voice loading — retry a few times
+let _voiceRetries = 0;
+const _voiceRetryTimer = setInterval(() => {
+  if (voices.length || _voiceRetries++ >= 10) { clearInterval(_voiceRetryTimer); return; }
+  loadVoices();
+}, 300);
 
 function getSelectedVoice() {
   const name = document.getElementById('voice-select').value;
@@ -120,12 +128,26 @@ function completeProgress() {
    PLAYBACK
    ════════════════════════════════════════════════ */
 function playStory(story, musicEnabled) {
-  // Resume from pause
-  if (isPaused && synth.paused) {
+  // Resume from pause — only check our own flag, not synth.paused
+  // (synth.paused is unreliable on Android/iOS mobile browsers)
+  if (isPaused) {
     synth.resume();
     isPaused = false;
     setPlayingState(true);
     if (musicEnabled) startMusic();
+    // On iOS, resume() sometimes silently fails — detect and fall through to fresh play
+    setTimeout(() => {
+      if (!synth.speaking) {
+        isPaused = false;
+        playStory(story, musicEnabled);
+      }
+    }, 400);
+    return;
+  }
+
+  // Check if browser supports speech synthesis
+  if (!window.speechSynthesis) {
+    alert('Penyemak imbas ini tidak menyokong bacaan suara. Sila guna Chrome atau Safari terbaru.');
     return;
   }
 
@@ -162,12 +184,24 @@ function playStory(story, musicEnabled) {
   };
 
   utter.onerror = (e) => {
-    if (e.error !== 'interrupted') console.warn('Speech error:', e.error);
+    if (e.error === 'not-allowed') {
+      alert('Sila ketik butang sekali lagi — penyemak imbas anda memerlukan tindakan pengguna untuk memulakan suara.');
+    } else if (e.error !== 'interrupted' && e.error !== 'canceled') {
+      console.warn('Speech error:', e.error);
+    }
+    setPlayingState(false);
   };
 
   synth.speak(utter);
   setPlayingState(true);
   if (musicEnabled) startMusic();
+
+  // Detect silent failure: if speech hasn't started within 2s, show warning
+  setTimeout(() => {
+    if (!synth.speaking && !synth.paused) {
+      setPlayingState(false);
+    }
+  }, 2000);
 
   setTimeout(() => {
     document.getElementById('char-secondary').classList.add('visible');
@@ -175,7 +209,8 @@ function playStory(story, musicEnabled) {
 }
 
 function pauseStory(musicEnabled) {
-  if (synth.speaking && !synth.paused) {
+  // synth.speaking check only — synth.paused is unreliable on mobile
+  if (synth.speaking) {
     synth.pause();
     isPaused = true;
     clearProgress();
