@@ -12,12 +12,33 @@ let wordSpans = [];
 let isPaused  = false;
 let progressTimer = null;
 
-// Resume-by-offset state (mobile-safe: we cancel + restart instead of pause/resume)
+// Resume-by-offset state (mobile-safe: cancel + restart instead of pause/resume)
 let _fullText     = '';
-let _baseOffset   = 0;   // where the current utterance started inside _fullText
-let _currentChar  = 0;   // absolute char position (updated via onboundary)
-let _suppressEnd  = false; // don't trigger onStoryComplete when we cancel to pause
+let _baseOffset   = 0;    // where current utterance started inside _fullText
+let _currentChar  = 0;    // absolute char position (time-estimated, refined by onboundary)
+let _suppressEnd  = false;
 let _currentStory = null;
+let _posTimer     = null; // interval that estimates position by elapsed time
+let _utterStart   = 0;    // Date.now() when utterance started speaking
+let _utterRate    = 1.0;
+let _utterLen     = 0;    // length of current utterance text
+
+function _startPosTracking(baseOffset, textLen, rate) {
+  _stopPosTracking();
+  _utterStart  = Date.now();
+  _utterRate   = rate;
+  _utterLen    = textLen;
+  _posTimer = setInterval(() => {
+    const elapsed    = (Date.now() - _utterStart) / 1000; // seconds
+    const charsPerSec = 13 * _utterRate;
+    _currentChar = Math.min(baseOffset + Math.floor(elapsed * charsPerSec),
+                            baseOffset + _utterLen - 1);
+  }, 100);
+}
+
+function _stopPosTracking() {
+  if (_posTimer) { clearInterval(_posTimer); _posTimer = null; }
+}
 
 
 /* ════════════════════════════════════════════════
@@ -165,12 +186,11 @@ function playStory(story, musicEnabled) {
 }
 
 function _speakUtterance(text, musicEnabled, isResume) {
-  // Cancel any existing speech without triggering completion
+  _stopPosTracking();
   _suppressEnd = true;
   try { synth.cancel(); } catch(e) {}
   resetProgress();
 
-  // Small delay helps mobile browsers after cancel()
   setTimeout(() => {
     _suppressEnd = false;
     const utter = new SpeechSynthesisUtterance(text);
@@ -188,9 +208,11 @@ function _speakUtterance(text, musicEnabled, isResume) {
 
     utter.onstart = () => {
       startProgress(estimatedMs);
+      // Start time-based position tracking (works even when onboundary doesn't fire)
+      _startPosTracking(_baseOffset, text.length, rate);
     };
 
-    // Track absolute position in _fullText so pause/resume knows where we are
+    // onboundary refines position when the browser supports it
     utter.onboundary = (e) => {
       if (typeof e.charIndex === 'number') {
         _currentChar = _baseOffset + e.charIndex;
@@ -198,6 +220,7 @@ function _speakUtterance(text, musicEnabled, isResume) {
     };
 
     utter.onend = () => {
+      _stopPosTracking();
       if (_suppressEnd || isPaused) return;
       _currentChar = _fullText.length;
       clearProgress();
@@ -209,6 +232,7 @@ function _speakUtterance(text, musicEnabled, isResume) {
     };
 
     utter.onerror = (e) => {
+      _stopPosTracking();
       if (e.error === 'not-allowed') {
         alert('Sila ketik butang sekali lagi — penyemak imbas anda memerlukan tindakan pengguna untuk memulakan suara.');
       } else if (e.error !== 'interrupted' && e.error !== 'canceled') {
@@ -230,9 +254,8 @@ function _speakUtterance(text, musicEnabled, isResume) {
 }
 
 function pauseStory(musicEnabled) {
-  // Cancel instead of pause — synth.pause()/resume() are broken on mobile.
-  // _currentChar has been tracked via onboundary, so play will resume from there.
   if (synth.speaking || synth.paused) {
+    _stopPosTracking(); // freeze _currentChar at current estimated position
     _suppressEnd = true;
     isPaused = true;
     try { synth.cancel(); } catch(e) {}
@@ -245,12 +268,13 @@ function pauseStory(musicEnabled) {
 }
 
 function stopStory(musicEnabled) {
+  _stopPosTracking();
   _suppressEnd = true;
   try { synth.cancel(); } catch(e) {}
   setTimeout(() => { _suppressEnd = false; }, 120);
-  isPaused      = false;
-  _currentChar  = 0;
-  _baseOffset   = 0;
+  isPaused     = false;
+  _currentChar = 0;
+  _baseOffset  = 0;
   resetProgress();
   setPlayingState(false);
   document.getElementById('char-secondary').classList.remove('visible');
