@@ -12,6 +12,13 @@ let wordSpans = [];
 let isPaused  = false;
 let progressTimer = null;
 
+// Resume-by-offset state (mobile-safe: we cancel + restart instead of pause/resume)
+let _fullText     = '';
+let _baseOffset   = 0;   // where the current utterance started inside _fullText
+let _currentChar  = 0;   // absolute char position (updated via onboundary)
+let _suppressEnd  = false; // don't trigger onStoryComplete when we cancel to pause
+let _currentStory = null;
+
 
 /* ════════════════════════════════════════════════
    VOICE LOADING
@@ -128,91 +135,108 @@ function completeProgress() {
    PLAYBACK
    ════════════════════════════════════════════════ */
 function playStory(story, musicEnabled) {
-  // Resume from pause — only check our own flag, not synth.paused
-  // (synth.paused is unreliable on Android/iOS mobile browsers)
-  if (isPaused) {
-    synth.resume();
-    isPaused = false;
-    setPlayingState(true);
-    if (musicEnabled) startMusic();
-    // On iOS, resume() sometimes silently fails — detect and fall through to fresh play
-    setTimeout(() => {
-      if (!synth.speaking) {
-        isPaused = false;
-        playStory(story, musicEnabled);
-      }
-    }, 400);
-    return;
-  }
-
   // Check if browser supports speech synthesis
   if (!window.speechSynthesis) {
     alert('Penyemak imbas ini tidak menyokong bacaan suara. Sila guna Chrome atau Safari terbaru.');
     return;
   }
 
-  synth.cancel();
+  // Resume-from-pause: restart utterance from saved char offset.
+  // We don't use synth.resume() — it silently fails on Android/iOS.
+  if (isPaused) {
+    isPaused = false;
+    const remaining = _fullText.substring(_currentChar);
+    _baseOffset = _currentChar;
+    if (remaining.trim().length === 0) {
+      // Already at end — just finish cleanly
+      setPlayingState(false);
+      return;
+    }
+    _speakUtterance(remaining, musicEnabled, /*isResume*/ true);
+    return;
+  }
+
+  // Fresh start
+  _currentStory = story;
+  _fullText     = story.paragraphs.join(' ');
+  _baseOffset   = 0;
+  _currentChar  = 0;
+  _speakUtterance(_fullText, musicEnabled, false);
+}
+
+function _speakUtterance(text, musicEnabled, isResume) {
+  // Cancel any existing speech without triggering completion
+  _suppressEnd = true;
+  try { synth.cancel(); } catch(e) {}
   resetProgress();
 
-  const fullText = story.paragraphs.join(' ');
-  const utter    = new SpeechSynthesisUtterance(fullText);
-  const rate     = parseFloat(document.getElementById('speed-range').value);
-
-  utter.rate   = rate;
-  utter.pitch  = 1.15;
-  utter.volume = 1.0;
-  utter.lang   = 'ms-MY';
-
-  const voice = getSelectedVoice();
-  if (voice) utter.voice = voice;
-
-  // Estimate total duration for progress bar (~13 chars/sec at rate 1.0)
-  const estimatedMs = (fullText.length / (13 * rate)) * 1000;
-
-  utter.onstart = () => {
-    startProgress(estimatedMs);
-  };
-
-  utter.onend = () => {
-    clearProgress();
-    completeProgress();
-    setPlayingState(false);
-    document.getElementById('char-stage').classList.remove('playing');
-    if (musicEnabled) setTimeout(stopMusic, 3500);
-    // Notify app.js — triggers star rating + badge save
-    if (typeof onStoryComplete === 'function') onStoryComplete();
-  };
-
-  utter.onerror = (e) => {
-    if (e.error === 'not-allowed') {
-      alert('Sila ketik butang sekali lagi — penyemak imbas anda memerlukan tindakan pengguna untuk memulakan suara.');
-    } else if (e.error !== 'interrupted' && e.error !== 'canceled') {
-      console.warn('Speech error:', e.error);
-    }
-    setPlayingState(false);
-  };
-
-  synth.speak(utter);
-  setPlayingState(true);
-  if (musicEnabled) startMusic();
-
-  // Detect silent failure: if speech hasn't started within 2s, show warning
+  // Small delay helps mobile browsers after cancel()
   setTimeout(() => {
-    if (!synth.speaking && !synth.paused) {
+    _suppressEnd = false;
+    const utter = new SpeechSynthesisUtterance(text);
+    const rate  = parseFloat(document.getElementById('speed-range').value);
+
+    utter.rate   = rate;
+    utter.pitch  = 1.15;
+    utter.volume = 1.0;
+    utter.lang   = 'ms-MY';
+
+    const voice = getSelectedVoice();
+    if (voice) utter.voice = voice;
+
+    const estimatedMs = (text.length / (13 * rate)) * 1000;
+
+    utter.onstart = () => {
+      startProgress(estimatedMs);
+    };
+
+    // Track absolute position in _fullText so pause/resume knows where we are
+    utter.onboundary = (e) => {
+      if (typeof e.charIndex === 'number') {
+        _currentChar = _baseOffset + e.charIndex;
+      }
+    };
+
+    utter.onend = () => {
+      if (_suppressEnd || isPaused) return;
+      _currentChar = _fullText.length;
+      clearProgress();
+      completeProgress();
       setPlayingState(false);
-    }
-  }, 2000);
+      document.getElementById('char-stage').classList.remove('playing');
+      if (musicEnabled) setTimeout(stopMusic, 3500);
+      if (typeof onStoryComplete === 'function') onStoryComplete();
+    };
 
-  setTimeout(() => {
-    document.getElementById('char-secondary').classList.add('visible');
-  }, 2000);
+    utter.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        alert('Sila ketik butang sekali lagi — penyemak imbas anda memerlukan tindakan pengguna untuk memulakan suara.');
+      } else if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.warn('Speech error:', e.error);
+      }
+      if (!_suppressEnd && !isPaused) setPlayingState(false);
+    };
+
+    synth.speak(utter);
+    setPlayingState(true);
+    if (musicEnabled) startMusic();
+
+    if (!isResume) {
+      setTimeout(() => {
+        document.getElementById('char-secondary').classList.add('visible');
+      }, 2000);
+    }
+  }, 80);
 }
 
 function pauseStory(musicEnabled) {
-  // synth.speaking check only — synth.paused is unreliable on mobile
-  if (synth.speaking) {
-    synth.pause();
+  // Cancel instead of pause — synth.pause()/resume() are broken on mobile.
+  // _currentChar has been tracked via onboundary, so play will resume from there.
+  if (synth.speaking || synth.paused) {
+    _suppressEnd = true;
     isPaused = true;
+    try { synth.cancel(); } catch(e) {}
+    setTimeout(() => { _suppressEnd = false; }, 120);
     clearProgress();
     setPlayingState(false);
     document.getElementById('char-stage').classList.remove('playing');
@@ -221,8 +245,12 @@ function pauseStory(musicEnabled) {
 }
 
 function stopStory(musicEnabled) {
-  synth.cancel();
-  isPaused = false;
+  _suppressEnd = true;
+  try { synth.cancel(); } catch(e) {}
+  setTimeout(() => { _suppressEnd = false; }, 120);
+  isPaused      = false;
+  _currentChar  = 0;
+  _baseOffset   = 0;
   resetProgress();
   setPlayingState(false);
   document.getElementById('char-secondary').classList.remove('visible');
@@ -243,10 +271,8 @@ function setPlayingState(playing) {
    AUTO-PAUSE when tab is hidden
    ════════════════════════════════════════════════ */
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && synth.speaking && !synth.paused) {
-    synth.pause();
-    isPaused = true;
-    clearProgress();
-    setPlayingState(false);
+  if (document.hidden && (synth.speaking || synth.paused) && !isPaused) {
+    // Use our own pause (cancel + save offset) — synth.pause is unreliable on mobile
+    pauseStory(false);
   }
 });
